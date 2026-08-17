@@ -1,7 +1,12 @@
+from datetime import datetime
 from typing import Protocol
 from uuid import UUID
 
+from careerops_automation_mcp_hub.domain.action_item import ActionItem
 from careerops_automation_mcp_hub.domain.application_event import ApplicationEvent
+from careerops_automation_mcp_hub.domain.application_lifecycle import (
+    ApplicationStatus,
+)
 from careerops_automation_mcp_hub.domain.job_application import JobApplication
 
 
@@ -20,7 +25,30 @@ class JobApplicationRepository(Protocol):
     async def save(self, application: JobApplication) -> None:
         """Persist changes to an existing application."""
 
+    async def list_for_user(
+        self,
+        *,
+        user_id: str,
+        status: ApplicationStatus | None = None,
+    ) -> tuple[JobApplication, ...]:
+        """Return applications available to one user."""
+        ...
+
 
 class ApplicationEventRepository(Protocol):
     async def add(self, event: ApplicationEvent) -> None:
         """Persist an application event."""
+
+
+class ActionItemRepository(Protocol):
+    async def add(self, action: ActionItem) -> None:
+        """Persist an action item."""
+
+    async def list_pending(
+        self,
+        *,
+        user_id: str,
+        due_before: datetime | None = None,
+    ) -> tuple[ActionItem, ...]:
+        """Return pending actions available to one user."""
+        ...
