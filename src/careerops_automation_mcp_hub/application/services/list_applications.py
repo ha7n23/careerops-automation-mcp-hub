@@ -1,7 +1,7 @@
 from dataclasses import dataclass
 
-from careerops_automation_mcp_hub.application.ports.repositories import (
-    JobApplicationRepository,
+from careerops_automation_mcp_hub.application.ports.unit_of_work import (
+    ApplicationUnitOfWorkFactory,
 )
 from careerops_automation_mcp_hub.domain.application_lifecycle import (
     ApplicationStatus,
@@ -18,15 +18,16 @@ class ListApplicationsQuery:
 class ListApplicationsService:
     def __init__(
         self,
-        applications: JobApplicationRepository,
+        unit_of_work_factory: ApplicationUnitOfWorkFactory,
     ) -> None:
-        self._applications = applications
+        self._unit_of_work_factory = unit_of_work_factory
 
     async def execute(
         self,
         query: ListApplicationsQuery,
     ) -> tuple[JobApplication, ...]:
-        return await self._applications.list_for_user(
-            user_id=query.user_id,
-            status=query.status,
-        )
+        async with self._unit_of_work_factory() as unit_of_work:
+            return await unit_of_work.applications.list_for_user(
+                user_id=query.user_id,
+                status=query.status,
+            )

@@ -40,8 +40,6 @@ async def mcp_client():
     server = build_mcp_server(
         user_id="USER-001",
         actor_id="MCP-TEST",
-        applications=applications,
-        actions=actions,
         unit_of_work_factory=unit_of_work_factory,
     )
 

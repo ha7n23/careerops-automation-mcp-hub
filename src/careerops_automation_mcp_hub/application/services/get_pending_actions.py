@@ -1,8 +1,8 @@
 from dataclasses import dataclass
 from datetime import datetime
 
-from careerops_automation_mcp_hub.application.ports.repositories import (
-    ActionItemRepository,
+from careerops_automation_mcp_hub.application.ports.unit_of_work import (
+    ApplicationUnitOfWorkFactory,
 )
 from careerops_automation_mcp_hub.domain.action_item import ActionItem
 
@@ -16,15 +16,16 @@ class GetPendingActionsQuery:
 class GetPendingActionsService:
     def __init__(
         self,
-        actions: ActionItemRepository,
+        unit_of_work_factory: ApplicationUnitOfWorkFactory,
     ) -> None:
-        self._actions = actions
+        self._unit_of_work_factory = unit_of_work_factory
 
     async def execute(
         self,
         query: GetPendingActionsQuery,
     ) -> tuple[ActionItem, ...]:
-        return await self._actions.list_pending(
-            user_id=query.user_id,
-            due_before=query.due_before,
-        )
+        async with self._unit_of_work_factory() as unit_of_work:
+            return await unit_of_work.actions.list_pending(
+                user_id=query.user_id,
+                due_before=query.due_before,
+            )

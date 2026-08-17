@@ -4,10 +4,6 @@ from uuid import UUID
 from mcp.server import MCPServer
 from mcp.types import ToolAnnotations
 
-from careerops_automation_mcp_hub.application.ports.repositories import (
-    ActionItemRepository,
-    JobApplicationRepository,
-)
 from careerops_automation_mcp_hub.application.ports.unit_of_work import (
     ApplicationUnitOfWorkFactory,
 )
@@ -46,18 +42,16 @@ def build_mcp_server(
     *,
     user_id: str,
     actor_id: str,
-    applications: JobApplicationRepository,
-    actions: ActionItemRepository,
     unit_of_work_factory: ApplicationUnitOfWorkFactory,
 ) -> MCPServer:
     """Build the CareerOps MCP server for a trusted principal."""
     mcp = MCPServer("CareerOps Automation Hub")
 
     create_service = CreateApplicationService(unit_of_work_factory)
-    get_service = GetApplicationService(applications)
+    get_service = GetApplicationService(unit_of_work_factory)
     update_service = UpdateApplicationStatusService(unit_of_work_factory)
-    list_service = ListApplicationsService(applications)
-    pending_actions_service = GetPendingActionsService(actions)
+    list_service = ListApplicationsService(unit_of_work_factory)
+    pending_actions_service = GetPendingActionsService(unit_of_work_factory)
 
     @mcp.tool(
         annotations=ToolAnnotations(

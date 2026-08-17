@@ -65,12 +65,20 @@ def build_update_service() -> tuple[
 
 @pytest.mark.anyio
 async def test_get_application_returns_user_scoped_application() -> None:
-    repository = InMemoryJobApplicationRepository()
+    applications = InMemoryJobApplicationRepository()
+    events = InMemoryApplicationEventRepository()
+    actions = InMemoryActionItemRepository()
+
+    unit_of_work_factory = InMemoryApplicationUnitOfWorkFactory(
+        applications=applications,
+        events=events,
+        actions=actions,
+    )
+
     application = build_application()
+    await applications.add(application)
 
-    await repository.add(application)
-
-    service = GetApplicationService(repository)
+    service = GetApplicationService(unit_of_work_factory)
 
     result = await service.execute(
         GetApplicationQuery(
@@ -84,12 +92,20 @@ async def test_get_application_returns_user_scoped_application() -> None:
 
 @pytest.mark.anyio
 async def test_get_application_raises_when_application_is_not_available() -> None:
-    repository = InMemoryJobApplicationRepository()
+    applications = InMemoryJobApplicationRepository()
+    events = InMemoryApplicationEventRepository()
+    actions = InMemoryActionItemRepository()
+
+    unit_of_work_factory = InMemoryApplicationUnitOfWorkFactory(
+        applications=applications,
+        events=events,
+        actions=actions,
+    )
+
     application = build_application(user_id="USER-OTHER")
+    await applications.add(application)
 
-    await repository.add(application)
-
-    service = GetApplicationService(repository)
+    service = GetApplicationService(unit_of_work_factory)
 
     with pytest.raises(ApplicationNotFoundError):
         await service.execute(
