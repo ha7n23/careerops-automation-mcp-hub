@@ -1,9 +1,8 @@
 from dataclasses import dataclass
 from datetime import datetime
 
-from careerops_automation_mcp_hub.application.ports.repositories import (
-    ApplicationEventRepository,
-    JobApplicationRepository,
+from careerops_automation_mcp_hub.application.ports.unit_of_work import (
+    ApplicationUnitOfWorkFactory,
 )
 from careerops_automation_mcp_hub.domain.application_event import (
     ApplicationEvent,
@@ -30,11 +29,9 @@ class CreateApplicationResult:
 class CreateApplicationService:
     def __init__(
         self,
-        applications: JobApplicationRepository,
-        events: ApplicationEventRepository,
+        unit_of_work_factory: ApplicationUnitOfWorkFactory,
     ) -> None:
-        self._applications = applications
-        self._events = events
+        self._unit_of_work_factory = unit_of_work_factory
 
     async def execute(
         self,
@@ -55,8 +52,10 @@ class CreateApplicationService:
             occurred_at=command.now,
         )
 
-        await self._applications.add(application)
-        await self._events.add(event)
+        async with self._unit_of_work_factory() as unit_of_work:
+            await unit_of_work.applications.add(application)
+            await unit_of_work.events.add(event)
+            await unit_of_work.commit()
 
         return CreateApplicationResult(
             application=application,

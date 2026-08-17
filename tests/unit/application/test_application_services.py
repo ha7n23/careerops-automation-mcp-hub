@@ -1,5 +1,4 @@
 from datetime import UTC, datetime
-from uuid import UUID
 
 import pytest
 
@@ -15,7 +14,6 @@ from careerops_automation_mcp_hub.application.services.update_application_status
     UpdateApplicationStatusService,
 )
 from careerops_automation_mcp_hub.domain.application_event import (
-    ApplicationEvent,
     ApplicationEventType,
 )
 from careerops_automation_mcp_hub.domain.application_lifecycle import (
@@ -23,40 +21,14 @@ from careerops_automation_mcp_hub.domain.application_lifecycle import (
     InvalidApplicationStatusTransition,
 )
 from careerops_automation_mcp_hub.domain.job_application import JobApplication
-
-
-class FakeJobApplicationRepository:
-    def __init__(self) -> None:
-        self.applications: dict[UUID, JobApplication] = {}
-        self.saved: list[JobApplication] = []
-
-    async def add(self, application: JobApplication) -> None:
-        self.applications[application.application_id] = application
-
-    async def get(
-        self,
-        *,
-        user_id: str,
-        application_id: UUID,
-    ) -> JobApplication | None:
-        application = self.applications.get(application_id)
-
-        if application is None or application.user_id != user_id:
-            return None
-
-        return application
-
-    async def save(self, application: JobApplication) -> None:
-        self.applications[application.application_id] = application
-        self.saved.append(application)
-
-
-class FakeApplicationEventRepository:
-    def __init__(self) -> None:
-        self.events: list[ApplicationEvent] = []
-
-    async def add(self, event: ApplicationEvent) -> None:
-        self.events.append(event)
+from careerops_automation_mcp_hub.infrastructure.memory.repositories import (
+    InMemoryActionItemRepository,
+    InMemoryApplicationEventRepository,
+    InMemoryJobApplicationRepository,
+)
+from careerops_automation_mcp_hub.infrastructure.memory.unit_of_work import (
+    InMemoryApplicationUnitOfWorkFactory,
+)
 
 
 def build_application(
@@ -70,10 +42,32 @@ def build_application(
     )
 
 
+def build_update_service() -> tuple[
+    UpdateApplicationStatusService,
+    InMemoryJobApplicationRepository,
+    InMemoryApplicationEventRepository,
+    InMemoryApplicationUnitOfWorkFactory,
+]:
+    applications = InMemoryJobApplicationRepository()
+    events = InMemoryApplicationEventRepository()
+    actions = InMemoryActionItemRepository()
+
+    unit_of_work_factory = InMemoryApplicationUnitOfWorkFactory(
+        applications=applications,
+        events=events,
+        actions=actions,
+    )
+
+    service = UpdateApplicationStatusService(unit_of_work_factory)
+
+    return service, applications, events, unit_of_work_factory
+
+
 @pytest.mark.anyio
 async def test_get_application_returns_user_scoped_application() -> None:
-    repository = FakeJobApplicationRepository()
+    repository = InMemoryJobApplicationRepository()
     application = build_application()
+
     await repository.add(application)
 
     service = GetApplicationService(repository)
@@ -90,8 +84,9 @@ async def test_get_application_returns_user_scoped_application() -> None:
 
 @pytest.mark.anyio
 async def test_get_application_raises_when_application_is_not_available() -> None:
-    repository = FakeJobApplicationRepository()
+    repository = InMemoryJobApplicationRepository()
     application = build_application(user_id="USER-OTHER")
+
     await repository.add(application)
 
     service = GetApplicationService(repository)
@@ -107,13 +102,10 @@ async def test_get_application_raises_when_application_is_not_available() -> Non
 
 @pytest.mark.anyio
 async def test_update_application_status_persists_change_and_event() -> None:
-    applications = FakeJobApplicationRepository()
-    events = FakeApplicationEventRepository()
+    service, applications, events, unit_of_work_factory = build_update_service()
 
     application = build_application()
     await applications.add(application)
-
-    service = UpdateApplicationStatusService(applications, events)
 
     transitioned_at = datetime(2026, 8, 17, 14, 0, tzinfo=UTC)
 
@@ -129,25 +121,31 @@ async def test_update_application_status_persists_change_and_event() -> None:
 
     assert result.application.status is ApplicationStatus.PREPARING
     assert result.application.updated_at == transitioned_at
-    assert applications.saved == [result.application]
+
+    stored = await applications.get(
+        user_id="USER-001",
+        application_id=application.application_id,
+    )
+
+    assert stored is result.application
 
     assert result.event.event_type is ApplicationEventType.STATUS_CHANGED
     assert dict(result.event.attributes) == {
         "new_status": "preparing",
         "previous_status": "saved",
     }
-    assert events.events == [result.event]
+    assert events.all() == (result.event,)
+
+    assert unit_of_work_factory.created[-1].committed is True
+    assert unit_of_work_factory.created[-1].rolled_back is False
 
 
 @pytest.mark.anyio
 async def test_invalid_status_transition_is_not_persisted() -> None:
-    applications = FakeJobApplicationRepository()
-    events = FakeApplicationEventRepository()
+    service, applications, events, unit_of_work_factory = build_update_service()
 
     application = build_application()
     await applications.add(application)
-
-    service = UpdateApplicationStatusService(applications, events)
 
     with pytest.raises(InvalidApplicationStatusTransition):
         await service.execute(
@@ -159,19 +157,25 @@ async def test_invalid_status_transition_is_not_persisted() -> None:
             )
         )
 
-    assert applications.saved == []
-    assert events.events == []
+    stored = await applications.get(
+        user_id="USER-001",
+        application_id=application.application_id,
+    )
+
+    assert stored is not None
+    assert stored.status is ApplicationStatus.SAVED
+    assert events.all() == ()
+
+    assert unit_of_work_factory.created[-1].committed is False
+    assert unit_of_work_factory.created[-1].rolled_back is True
 
 
 @pytest.mark.anyio
 async def test_update_cannot_access_another_users_application() -> None:
-    applications = FakeJobApplicationRepository()
-    events = FakeApplicationEventRepository()
+    service, applications, events, unit_of_work_factory = build_update_service()
 
     application = build_application(user_id="USER-OTHER")
     await applications.add(application)
-
-    service = UpdateApplicationStatusService(applications, events)
 
     with pytest.raises(ApplicationNotFoundError):
         await service.execute(
@@ -183,5 +187,8 @@ async def test_update_cannot_access_another_users_application() -> None:
             )
         )
 
-    assert applications.saved == []
-    assert events.events == []
+    assert application.status is ApplicationStatus.SAVED
+    assert events.all() == ()
+
+    assert unit_of_work_factory.created[-1].committed is False
+    assert unit_of_work_factory.created[-1].rolled_back is True

@@ -14,6 +14,9 @@ from careerops_automation_mcp_hub.infrastructure.memory.repositories import (
     InMemoryApplicationEventRepository,
     InMemoryJobApplicationRepository,
 )
+from careerops_automation_mcp_hub.infrastructure.memory.unit_of_work import (
+    InMemoryApplicationUnitOfWorkFactory,
+)
 from careerops_automation_mcp_hub.mcp.server import build_mcp_server
 
 
@@ -28,12 +31,18 @@ async def mcp_client():
     events = InMemoryApplicationEventRepository()
     actions = InMemoryActionItemRepository()
 
+    unit_of_work_factory = InMemoryApplicationUnitOfWorkFactory(
+        applications=applications,
+        events=events,
+        actions=actions,
+    )
+
     server = build_mcp_server(
         user_id="USER-001",
         actor_id="MCP-TEST",
         applications=applications,
-        events=events,
         actions=actions,
+        unit_of_work_factory=unit_of_work_factory,
     )
 
     async with Client(server, raise_exceptions=True) as client:
