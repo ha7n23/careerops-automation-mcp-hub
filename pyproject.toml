@@ -1,0 +1,31 @@
+[project]
+name = "careerops-automation-mcp-hub"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+authors = [
+    { name = "Huzaifa Amjad", email = "ha7n23@soton.ac.uk" }
+]
+requires-python = ">=3.12"
+dependencies = [
+    "fastapi>=0.141.1",
+    "mcp[cli]>=2.0.0",
+    "pydantic>=2.13.4",
+    "pydantic-settings>=2.15.0",
+    "uvicorn[standard]>=0.52.3",
+]
+
+[project.scripts]
+careerops-automation-mcp-hub = "careerops_automation_mcp_hub:main"
+
+[build-system]
+requires = ["uv_build>=0.12.1,<0.13.0"]
+build-backend = "uv_build"
+
+[dependency-groups]
+dev = [
+    "httpx>=0.28.1",
+    "mypy>=2.3.1",
+    "pytest>=9.1.1",
+    "ruff>=0.16.3",
+]
