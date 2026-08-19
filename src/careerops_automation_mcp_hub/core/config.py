@@ -1,6 +1,6 @@
 from functools import lru_cache
 
-from pydantic import SecretStr
+from pydantic import AnyHttpUrl, SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -14,6 +14,12 @@ class Settings(BaseSettings):
     database_url: SecretStr = SecretStr(
         "postgresql+asyncpg://careerops:careerops@localhost:5433/careerops"
     )
+
+    auth_issuer_url: AnyHttpUrl = AnyHttpUrl("https://auth.example.com")
+    mcp_resource_url: AnyHttpUrl = AnyHttpUrl("http://127.0.0.1:8000/mcp")
+    mcp_host: str = "127.0.0.1"
+    mcp_required_scope: str = "careerops:applications"
+    mcp_json_response: bool = False
 
 
 @lru_cache

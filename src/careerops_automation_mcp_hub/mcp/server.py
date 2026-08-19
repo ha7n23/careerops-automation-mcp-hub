@@ -2,6 +2,8 @@ from datetime import datetime
 from uuid import UUID
 
 from mcp.server import MCPServer
+from mcp.server.auth.provider import TokenVerifier
+from mcp.server.auth.settings import AuthSettings
 from mcp.types import ToolAnnotations
 
 from careerops_automation_mcp_hub.application.ports.unit_of_work import (
@@ -30,6 +32,7 @@ from careerops_automation_mcp_hub.application.services.update_application_status
 from careerops_automation_mcp_hub.domain.application_lifecycle import (
     ApplicationStatus,
 )
+from careerops_automation_mcp_hub.mcp.principal import PrincipalProvider
 from careerops_automation_mcp_hub.mcp.schemas import (
     ActionItemSummary,
     ApplicationListResult,
@@ -40,12 +43,18 @@ from careerops_automation_mcp_hub.mcp.schemas import (
 
 def build_mcp_server(
     *,
-    user_id: str,
-    actor_id: str,
+    principal_provider: PrincipalProvider,
     unit_of_work_factory: ApplicationUnitOfWorkFactory,
+    token_verifier: TokenVerifier | None = None,
+    auth: AuthSettings | None = None,
 ) -> MCPServer:
     """Build the CareerOps MCP server for a trusted principal."""
-    mcp = MCPServer("CareerOps Automation Hub")
+
+    mcp = MCPServer(
+        "CareerOps Automation Hub",
+        token_verifier=token_verifier,
+        auth=auth,
+    )
 
     create_service = CreateApplicationService(unit_of_work_factory)
     get_service = GetApplicationService(unit_of_work_factory)
@@ -70,12 +79,15 @@ def build_mcp_server(
         This changes internal CareerOps state only. It does not submit
         an application to an employer or external website.
         """
+
+        principal = principal_provider.get_principal()
+
         result = await create_service.execute(
             CreateApplicationCommand(
-                user_id=user_id,
+                user_id=principal.user_id,
                 company_name=company_name,
                 role_title=role_title,
-                actor_id=actor_id,
+                actor_id=principal.actor_id,
             )
         )
 
@@ -91,9 +103,12 @@ def build_mcp_server(
         application_id: UUID,
     ) -> ApplicationSummary:
         """Return one CareerOps application available to the current user."""
+
+        principal = principal_provider.get_principal()
+
         application = await get_service.execute(
             GetApplicationQuery(
-                user_id=user_id,
+                user_id=principal.user_id,
                 application_id=application_id,
             )
         )
@@ -117,12 +132,15 @@ def build_mcp_server(
         This updates CareerOps tracking state only and never changes
         an application on an external employer system.
         """
+
+        principal = principal_provider.get_principal()
+
         result = await update_service.execute(
             UpdateApplicationStatusCommand(
-                user_id=user_id,
+                user_id=principal.user_id,
                 application_id=application_id,
                 target_status=target_status,
-                actor_id=actor_id,
+                actor_id=principal.actor_id,
             )
         )
 
@@ -138,9 +156,12 @@ def build_mcp_server(
         status: ApplicationStatus | None = None,
     ) -> ApplicationListResult:
         """List CareerOps applications available to the current user."""
+
+        principal = principal_provider.get_principal()
+
         applications_found = await list_service.execute(
             ListApplicationsQuery(
-                user_id=user_id,
+                user_id=principal.user_id,
                 status=status,
             )
         )
@@ -165,9 +186,12 @@ def build_mcp_server(
         due_before: datetime | None = None,
     ) -> PendingActionsResult:
         """Return pending CareerOps actions requiring the user's attention."""
+
+        principal = principal_provider.get_principal()
+
         actions_found = await pending_actions_service.execute(
             GetPendingActionsQuery(
-                user_id=user_id,
+                user_id=principal.user_id,
                 due_before=due_before,
             )
         )
@@ -190,9 +214,11 @@ def build_mcp_server(
         except ValueError as exc:
             raise ValueError("Invalid application ID.") from exc
 
+        principal = principal_provider.get_principal()
+
         application = await get_service.execute(
             GetApplicationQuery(
-                user_id=user_id,
+                user_id=principal.user_id,
                 application_id=parsed_id,
             )
         )
@@ -211,8 +237,11 @@ def build_mcp_server(
     )
     async def pending_actions_resource() -> str:
         """Human-readable view of the user's pending CareerOps actions."""
+
+        principal = principal_provider.get_principal()
+
         actions_found = await pending_actions_service.execute(
-            GetPendingActionsQuery(user_id=user_id)
+            GetPendingActionsQuery(user_id=principal.user_id)
         )
 
         if not actions_found:

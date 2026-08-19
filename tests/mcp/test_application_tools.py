@@ -17,6 +17,10 @@ from careerops_automation_mcp_hub.infrastructure.memory.repositories import (
 from careerops_automation_mcp_hub.infrastructure.memory.unit_of_work import (
     InMemoryApplicationUnitOfWorkFactory,
 )
+from careerops_automation_mcp_hub.mcp.principal import (
+    Principal,
+    StaticPrincipalProvider,
+)
 from careerops_automation_mcp_hub.mcp.server import build_mcp_server
 
 
@@ -38,8 +42,12 @@ async def mcp_client():
     )
 
     server = build_mcp_server(
-        user_id="USER-001",
-        actor_id="MCP-TEST",
+        principal_provider=StaticPrincipalProvider(
+            Principal(
+                user_id="USER-001",
+                actor_id="MCP-TEST",
+            )
+        ),
         unit_of_work_factory=unit_of_work_factory,
     )
 
