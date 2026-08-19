@@ -192,3 +192,35 @@ async def test_authenticated_mcp_request_uses_token_principal(
     assert applications[0].user_id == "USER-HTTP"
     assert events[0].user_id == "USER-HTTP"
     assert events[0].actor_id == "openclaw"
+
+
+def test_ready_endpoint_reports_database_available(
+    postgres_database_url: str,
+) -> None:
+    app = create_app(
+        token_verifier=StubTokenVerifier(),
+        settings=build_test_settings(postgres_database_url),
+    )
+
+    with TestClient(app) as client:
+        response = client.get("/ready")
+
+    assert response.status_code == 200
+    assert response.json() == {"status": "ready"}
+
+
+def test_ready_endpoint_returns_503_when_database_unavailable() -> None:
+    unavailable_database_url = (
+        "postgresql+asyncpg://careerops:careerops@127.0.0.1:65432/careerops_test"
+    )
+
+    app = create_app(
+        token_verifier=StubTokenVerifier(),
+        settings=build_test_settings(unavailable_database_url),
+    )
+
+    with TestClient(app) as client:
+        response = client.get("/ready")
+
+    assert response.status_code == 503
+    assert response.json() == {"status": "not_ready"}

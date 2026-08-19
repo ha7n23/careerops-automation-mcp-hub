@@ -3,6 +3,7 @@ from dataclasses import dataclass
 from mcp.server import MCPServer
 from mcp.server.auth.provider import TokenVerifier
 from mcp.server.auth.settings import AuthSettings
+from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncEngine
 
 from careerops_automation_mcp_hub.core.config import Settings, get_settings
@@ -82,6 +83,11 @@ class CareerOpsRuntime:
             token_verifier=token_verifier,
             auth=auth,
         )
+
+    async def check_database_ready(self) -> None:
+        """Raise if the configured PostgreSQL database is not reachable."""
+        async with self.engine.connect() as connection:
+            await connection.execute(text("SELECT 1"))
 
     async def close(self) -> None:
         """Release long-lived runtime resources."""
