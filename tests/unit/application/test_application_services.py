@@ -5,6 +5,9 @@ import pytest
 from careerops_automation_mcp_hub.application.errors import (
     ApplicationNotFoundError,
 )
+from careerops_automation_mcp_hub.application.idempotency import (
+    IdempotencyConflictError,
+)
 from careerops_automation_mcp_hub.application.services.get_application import (
     GetApplicationQuery,
     GetApplicationService,
@@ -131,6 +134,7 @@ async def test_update_application_status_persists_change_and_event() -> None:
             application_id=application.application_id,
             target_status=ApplicationStatus.PREPARING,
             actor_id="USER-001",
+            idempotency_key="update-preparing-1",
             at=transitioned_at,
         )
     )
@@ -170,6 +174,7 @@ async def test_invalid_status_transition_is_not_persisted() -> None:
                 application_id=application.application_id,
                 target_status=ApplicationStatus.OFFER,
                 actor_id="USER-001",
+                idempotency_key="update-invalid-1",
             )
         )
 
@@ -200,6 +205,7 @@ async def test_update_cannot_access_another_users_application() -> None:
                 application_id=application.application_id,
                 target_status=ApplicationStatus.PREPARING,
                 actor_id="USER-001",
+                idempotency_key="update-wrong-user-1",
             )
         )
 
@@ -208,3 +214,71 @@ async def test_update_cannot_access_another_users_application() -> None:
 
     assert unit_of_work_factory.created[-1].committed is False
     assert unit_of_work_factory.created[-1].rolled_back is True
+
+
+@pytest.mark.anyio
+async def test_update_application_status_replays_same_idempotency_key() -> None:
+    service, applications, events, _ = build_update_service()
+
+    application = build_application()
+    await applications.add(application)
+
+    command = UpdateApplicationStatusCommand(
+        user_id="USER-001",
+        application_id=application.application_id,
+        target_status=ApplicationStatus.PREPARING,
+        actor_id="USER-001",
+        idempotency_key="update-replay-1",
+    )
+
+    first = await service.execute(command)
+    replay = await service.execute(command)
+
+    assert replay.application.application_id == (first.application.application_id)
+    assert replay.application.status is ApplicationStatus.PREPARING
+    assert replay.event.event_id == first.event.event_id
+
+    assert events.all() == (first.event,)
+
+
+@pytest.mark.anyio
+async def test_update_application_status_rejects_key_reuse_for_different_request() -> (
+    None
+):
+    service, applications, events, _ = build_update_service()
+
+    application = build_application()
+    await applications.add(application)
+
+    first = await service.execute(
+        UpdateApplicationStatusCommand(
+            user_id="USER-001",
+            application_id=application.application_id,
+            target_status=ApplicationStatus.PREPARING,
+            actor_id="USER-001",
+            idempotency_key="update-conflict-1",
+        )
+    )
+
+    with pytest.raises(
+        IdempotencyConflictError,
+        match="already used for a different request",
+    ):
+        await service.execute(
+            UpdateApplicationStatusCommand(
+                user_id="USER-001",
+                application_id=application.application_id,
+                target_status=ApplicationStatus.READY_TO_APPLY,
+                actor_id="USER-001",
+                idempotency_key="update-conflict-1",
+            )
+        )
+
+    stored = await applications.get(
+        user_id="USER-001",
+        application_id=application.application_id,
+    )
+
+    assert stored is not None
+    assert stored.status is ApplicationStatus.PREPARING
+    assert events.all() == (first.event,)

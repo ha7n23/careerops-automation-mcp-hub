@@ -5,6 +5,7 @@ from careerops_automation_mcp_hub.infrastructure.database.models import (
     ActionItemRecord,
     ApplicationEventRecord,
     ApprovalRequestRecord,
+    IdempotencyRecord,
     JobApplicationRecord,
 )
 
@@ -14,6 +15,7 @@ def test_expected_database_tables_are_registered() -> None:
         "action_items",
         "application_events",
         "approval_requests",
+        "idempotency_records",
         "job_applications",
     }
 
@@ -68,4 +70,17 @@ def test_domain_enum_check_constraints_are_present() -> None:
         "ck_action_items_status",
         "ck_approval_requests_action_type",
         "ck_approval_requests_status",
+        "ck_idempotency_records_operation",
     }.issubset(constraint_names)
+
+
+def test_idempotency_record_has_scoped_composite_primary_key() -> None:
+    primary_key_columns = {
+        column.name for column in IdempotencyRecord.__table__.primary_key
+    }
+
+    assert primary_key_columns == {
+        "user_id",
+        "operation",
+        "idempotency_key",
+    }

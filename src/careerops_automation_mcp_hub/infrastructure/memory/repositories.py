@@ -1,6 +1,12 @@
+from collections.abc import Mapping
+from dataclasses import dataclass
 from datetime import datetime
 from uuid import UUID
 
+from careerops_automation_mcp_hub.application.idempotency import (
+    IdempotencyClaim,
+    IdempotencyOperation,
+)
 from careerops_automation_mcp_hub.domain.action_item import (
     ActionItem,
     ActionItemStatus,
@@ -114,3 +120,89 @@ class InMemoryActionItemRepository:
 
     def all(self) -> tuple[ActionItem, ...]:
         return tuple(self._actions.values())
+
+
+@dataclass(slots=True)
+class _InMemoryIdempotencyRecord:
+    request_fingerprint: str
+    response_payload: dict[str, object] | None
+    created_at: datetime
+    completed_at: datetime | None
+
+
+class InMemoryIdempotencyRepository:
+    def __init__(self) -> None:
+        self._records: dict[
+            tuple[str, IdempotencyOperation, str],
+            _InMemoryIdempotencyRecord,
+        ] = {}
+
+    async def claim(
+        self,
+        *,
+        user_id: str,
+        operation: IdempotencyOperation,
+        idempotency_key: str,
+        request_fingerprint: str,
+        created_at: datetime,
+    ) -> IdempotencyClaim:
+        key = (
+            user_id,
+            operation,
+            idempotency_key,
+        )
+
+        existing = self._records.get(key)
+
+        if existing is not None:
+            return IdempotencyClaim(
+                acquired=False,
+                request_fingerprint=existing.request_fingerprint,
+                response_payload=(
+                    dict(existing.response_payload)
+                    if existing.response_payload is not None
+                    else None
+                ),
+            )
+
+        self._records[key] = _InMemoryIdempotencyRecord(
+            request_fingerprint=request_fingerprint,
+            response_payload=None,
+            created_at=created_at,
+            completed_at=None,
+        )
+
+        return IdempotencyClaim(
+            acquired=True,
+            request_fingerprint=request_fingerprint,
+            response_payload=None,
+        )
+
+    async def complete(
+        self,
+        *,
+        user_id: str,
+        operation: IdempotencyOperation,
+        idempotency_key: str,
+        request_fingerprint: str,
+        response_payload: Mapping[str, object],
+        completed_at: datetime,
+    ) -> None:
+        key = (
+            user_id,
+            operation,
+            idempotency_key,
+        )
+
+        existing = self._records.get(key)
+
+        if (
+            existing is None
+            or existing.request_fingerprint != request_fingerprint
+            or existing.response_payload is not None
+            or existing.completed_at is not None
+        ):
+            raise RuntimeError("Idempotency record could not be completed.")
+
+        existing.response_payload = dict(response_payload)
+        existing.completed_at = completed_at

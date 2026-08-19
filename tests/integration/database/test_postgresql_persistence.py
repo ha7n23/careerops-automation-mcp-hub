@@ -42,6 +42,7 @@ from careerops_automation_mcp_hub.domain.application_lifecycle import (
 from careerops_automation_mcp_hub.domain.job_application import JobApplication
 from careerops_automation_mcp_hub.infrastructure.database.models import (
     ApplicationEventRecord,
+    JobApplicationRecord,
 )
 from careerops_automation_mcp_hub.infrastructure.database.unit_of_work import (
     SqlAlchemyApplicationUnitOfWorkFactory,
@@ -65,6 +66,7 @@ async def test_create_and_get_application_round_trip(
             company_name="Monzo",
             role_title="Junior AI Engineer",
             actor_id="USER-001",
+            idempotency_key="round-trip-create-1",
         )
     )
 
@@ -105,6 +107,7 @@ async def test_application_reads_are_user_scoped(
             company_name="Revolut",
             role_title="AI Engineer",
             actor_id="USER-001",
+            idempotency_key="scoped-read-create-1",
         )
     )
 
@@ -135,6 +138,7 @@ async def test_status_update_persists_application_and_event(
             company_name="Monzo",
             role_title="Junior AI Engineer",
             actor_id="USER-001",
+            idempotency_key="status-update-create-1",
         )
     )
 
@@ -144,6 +148,7 @@ async def test_status_update_persists_application_and_event(
             application_id=created.application.application_id,
             target_status=ApplicationStatus.PREPARING,
             actor_id="USER-001",
+            idempotency_key="postgres-update-1",
         )
     )
 
@@ -249,6 +254,7 @@ async def test_list_applications_filters_by_user_and_status(
             company_name="Monzo",
             role_title="Junior AI Engineer",
             actor_id="USER-001",
+            idempotency_key="list-monzo-1",
         )
     )
     await create_service.execute(
@@ -257,6 +263,7 @@ async def test_list_applications_filters_by_user_and_status(
             company_name="Revolut",
             role_title="AI Engineer",
             actor_id="USER-001",
+            idempotency_key="list-revolut-1",
         )
     )
     await create_service.execute(
@@ -265,6 +272,7 @@ async def test_list_applications_filters_by_user_and_status(
             company_name="Wise",
             role_title="AI Engineer",
             actor_id="USER-OTHER",
+            idempotency_key="list-wise-1",
         )
     )
 
@@ -274,6 +282,7 @@ async def test_list_applications_filters_by_user_and_status(
             application_id=first.application.application_id,
             target_status=ApplicationStatus.PREPARING,
             actor_id="USER-001",
+            idempotency_key="postgres-list-update-1",
         )
     )
 
@@ -308,6 +317,7 @@ async def test_pending_actions_are_user_scoped_and_due_filtered(
             company_name="Monzo",
             role_title="Junior AI Engineer",
             actor_id="USER-001",
+            idempotency_key="pending-user-1",
         )
     )
     other_application = await create_service.execute(
@@ -316,6 +326,7 @@ async def test_pending_actions_are_user_scoped_and_due_filtered(
             company_name="Wise",
             role_title="AI Engineer",
             actor_id="USER-OTHER",
+            idempotency_key="pending-other-1",
         )
     )
 
@@ -357,3 +368,88 @@ async def test_pending_actions_are_user_scoped_and_due_filtered(
     )
 
     assert pending == (due_action,)
+
+
+@pytest.mark.anyio
+async def test_create_application_idempotency_persists_only_once(
+    postgres_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    unit_of_work_factory = SqlAlchemyApplicationUnitOfWorkFactory(
+        postgres_session_factory
+    )
+    service = CreateApplicationService(unit_of_work_factory)
+
+    command = CreateApplicationCommand(
+        user_id="USER-001",
+        company_name="Monzo",
+        role_title="Junior AI Engineer",
+        actor_id="USER-001",
+        idempotency_key="postgres-create-replay-1",
+    )
+
+    first = await service.execute(command)
+    replay = await service.execute(command)
+
+    assert replay.application.application_id == (first.application.application_id)
+    assert replay.event.event_id == first.event.event_id
+
+    async with postgres_session_factory() as session:
+        application_count = await session.scalar(
+            select(func.count()).select_from(JobApplicationRecord)
+        )
+        event_count = await session.scalar(
+            select(func.count()).select_from(ApplicationEventRecord)
+        )
+
+    assert application_count == 1
+    assert event_count == 1
+
+
+@pytest.mark.anyio
+async def test_update_application_status_idempotency_persists_only_once(
+    postgres_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    unit_of_work_factory = SqlAlchemyApplicationUnitOfWorkFactory(
+        postgres_session_factory
+    )
+
+    create_service = CreateApplicationService(unit_of_work_factory)
+    update_service = UpdateApplicationStatusService(unit_of_work_factory)
+
+    created = await create_service.execute(
+        CreateApplicationCommand(
+            user_id="USER-001",
+            company_name="Monzo",
+            role_title="Junior AI Engineer",
+            actor_id="USER-001",
+            idempotency_key="update-replay-create-1",
+        )
+    )
+
+    command = UpdateApplicationStatusCommand(
+        user_id="USER-001",
+        application_id=created.application.application_id,
+        target_status=ApplicationStatus.PREPARING,
+        actor_id="USER-001",
+        idempotency_key="postgres-update-replay-1",
+    )
+
+    first = await update_service.execute(command)
+    replay = await update_service.execute(command)
+
+    assert replay.application.application_id == (first.application.application_id)
+    assert replay.application.status is ApplicationStatus.PREPARING
+    assert replay.event.event_id == first.event.event_id
+
+    async with postgres_session_factory() as session:
+        application_count = await session.scalar(
+            select(func.count()).select_from(JobApplicationRecord)
+        )
+        event_count = await session.scalar(
+            select(func.count()).select_from(ApplicationEventRecord)
+        )
+
+    assert application_count == 1
+
+    # APPLICATION_CREATED + one STATUS_CHANGED.
+    assert event_count == 2

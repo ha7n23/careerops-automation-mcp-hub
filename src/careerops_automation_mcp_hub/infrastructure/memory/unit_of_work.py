@@ -4,11 +4,13 @@ from typing import Self
 from careerops_automation_mcp_hub.application.ports.repositories import (
     ActionItemRepository,
     ApplicationEventRepository,
+    IdempotencyRepository,
     JobApplicationRepository,
 )
 from careerops_automation_mcp_hub.infrastructure.memory.repositories import (
     InMemoryActionItemRepository,
     InMemoryApplicationEventRepository,
+    InMemoryIdempotencyRepository,
     InMemoryJobApplicationRepository,
 )
 
@@ -26,10 +28,12 @@ class InMemoryApplicationUnitOfWork:
         applications: InMemoryJobApplicationRepository,
         events: InMemoryApplicationEventRepository,
         actions: InMemoryActionItemRepository,
+        idempotency: InMemoryIdempotencyRepository,
     ) -> None:
         self.applications: JobApplicationRepository = applications
         self.events: ApplicationEventRepository = events
         self.actions: ActionItemRepository = actions
+        self.idempotency: IdempotencyRepository = idempotency
 
         self.committed = False
         self.rolled_back = False
@@ -63,6 +67,7 @@ class InMemoryApplicationUnitOfWorkFactory:
         self._applications = applications
         self._events = events
         self._actions = actions
+        self._idempotency = InMemoryIdempotencyRepository()
         self.created: list[InMemoryApplicationUnitOfWork] = []
 
     def __call__(self) -> InMemoryApplicationUnitOfWork:
@@ -70,6 +75,7 @@ class InMemoryApplicationUnitOfWorkFactory:
             applications=self._applications,
             events=self._events,
             actions=self._actions,
+            idempotency=self._idempotency,
         )
         self.created.append(unit_of_work)
         return unit_of_work

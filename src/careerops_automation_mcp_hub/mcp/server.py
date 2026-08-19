@@ -66,13 +66,14 @@ def build_mcp_server(
         annotations=ToolAnnotations(
             read_only_hint=False,
             destructive_hint=False,
-            idempotent_hint=False,
+            idempotent_hint=True,
             open_world_hint=False,
         )
     )
     async def create_application(
         company_name: str,
         role_title: str,
+        idempotency_key: str,
     ) -> ApplicationSummary:
         """Create a saved CareerOps job application.
 
@@ -88,6 +89,7 @@ def build_mcp_server(
                 company_name=company_name,
                 role_title=role_title,
                 actor_id=principal.actor_id,
+                idempotency_key=idempotency_key,
             )
         )
 
@@ -119,13 +121,14 @@ def build_mcp_server(
         annotations=ToolAnnotations(
             read_only_hint=False,
             destructive_hint=False,
-            idempotent_hint=False,
+            idempotent_hint=True,
             open_world_hint=False,
         )
     )
     async def update_application_status(
         application_id: UUID,
         target_status: ApplicationStatus,
+        idempotency_key: str,
     ) -> ApplicationSummary:
         """Move an application to a valid internal CareerOps lifecycle state.
 
@@ -141,6 +144,7 @@ def build_mcp_server(
                 application_id=application_id,
                 target_status=target_status,
                 actor_id=principal.actor_id,
+                idempotency_key=idempotency_key,
             )
         )
 

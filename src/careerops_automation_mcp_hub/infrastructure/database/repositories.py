@@ -1,9 +1,15 @@
+from collections.abc import Mapping
 from datetime import datetime
 from uuid import UUID
 
 from sqlalchemy import select, update
+from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from careerops_automation_mcp_hub.application.idempotency import (
+    IdempotencyClaim,
+    IdempotencyOperation,
+)
 from careerops_automation_mcp_hub.domain.action_item import (
     ActionItem,
     ActionItemStatus,
@@ -22,6 +28,7 @@ from careerops_automation_mcp_hub.infrastructure.database.mappers import (
 )
 from careerops_automation_mcp_hub.infrastructure.database.models import (
     ActionItemRecord,
+    IdempotencyRecord,
     JobApplicationRecord,
 )
 
@@ -136,3 +143,101 @@ class SqlAlchemyActionItemRepository:
         records = result.scalars().all()
 
         return tuple(action_item_from_record(record) for record in records)
+
+
+class SqlAlchemyIdempotencyRepository:
+    def __init__(self, session: AsyncSession) -> None:
+        self._session = session
+
+    async def claim(
+        self,
+        *,
+        user_id: str,
+        operation: IdempotencyOperation,
+        idempotency_key: str,
+        request_fingerprint: str,
+        created_at: datetime,
+    ) -> IdempotencyClaim:
+        statement = (
+            insert(IdempotencyRecord)
+            .values(
+                user_id=user_id,
+                operation=operation.value,
+                idempotency_key=idempotency_key,
+                request_fingerprint=request_fingerprint,
+                response_payload=None,
+                created_at=created_at,
+                completed_at=None,
+            )
+            .on_conflict_do_nothing(
+                index_elements=[
+                    IdempotencyRecord.user_id,
+                    IdempotencyRecord.operation,
+                    IdempotencyRecord.idempotency_key,
+                ]
+            )
+            .returning(IdempotencyRecord.request_fingerprint)
+        )
+
+        result = await self._session.execute(statement)
+        inserted_fingerprint = result.scalar_one_or_none()
+
+        if inserted_fingerprint is not None:
+            return IdempotencyClaim(
+                acquired=True,
+                request_fingerprint=inserted_fingerprint,
+                response_payload=None,
+            )
+
+        existing_statement = select(IdempotencyRecord).where(
+            IdempotencyRecord.user_id == user_id,
+            IdempotencyRecord.operation == operation.value,
+            IdempotencyRecord.idempotency_key == idempotency_key,
+        )
+
+        existing_result = await self._session.execute(existing_statement)
+        existing = existing_result.scalar_one()
+
+        response_payload = (
+            dict(existing.response_payload)
+            if existing.response_payload is not None
+            else None
+        )
+
+        return IdempotencyClaim(
+            acquired=False,
+            request_fingerprint=existing.request_fingerprint,
+            response_payload=response_payload,
+        )
+
+    async def complete(
+        self,
+        *,
+        user_id: str,
+        operation: IdempotencyOperation,
+        idempotency_key: str,
+        request_fingerprint: str,
+        response_payload: Mapping[str, object],
+        completed_at: datetime,
+    ) -> None:
+        statement = (
+            update(IdempotencyRecord)
+            .where(
+                IdempotencyRecord.user_id == user_id,
+                IdempotencyRecord.operation == operation.value,
+                IdempotencyRecord.idempotency_key == idempotency_key,
+                IdempotencyRecord.request_fingerprint == request_fingerprint,
+                IdempotencyRecord.response_payload.is_(None),
+                IdempotencyRecord.completed_at.is_(None),
+            )
+            .values(
+                response_payload=dict(response_payload),
+                completed_at=completed_at,
+            )
+            .returning(IdempotencyRecord.idempotency_key)
+        )
+
+        result = await self._session.execute(statement)
+
+        if result.scalar_one_or_none() is None:
+            raise RuntimeError("Idempotency record could not be completed.")

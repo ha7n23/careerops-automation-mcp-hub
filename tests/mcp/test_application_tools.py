@@ -66,6 +66,7 @@ async def test_create_application_tool_returns_structured_result(
         {
             "company_name": "Monzo",
             "role_title": "Junior AI Engineer",
+            "idempotency_key": "mcp-create-1",
         },
     )
 
@@ -97,6 +98,7 @@ async def test_get_application_tool_reads_created_application(
         {
             "company_name": "Monzo",
             "role_title": "Junior AI Engineer",
+            "idempotency_key": "mcp-get-setup-1",
         },
     )
 
@@ -125,6 +127,7 @@ async def test_update_status_tool_uses_domain_lifecycle_policy(
         {
             "company_name": "Monzo",
             "role_title": "Junior AI Engineer",
+            "idempotency_key": "mcp-update-setup-1",
         },
     )
 
@@ -136,6 +139,7 @@ async def test_update_status_tool_uses_domain_lifecycle_policy(
         {
             "application_id": application_id,
             "target_status": "preparing",
+            "idempotency_key": "mcp-update-1",
         },
     )
 
@@ -157,6 +161,7 @@ async def test_invalid_status_transition_returns_tool_error(
         {
             "company_name": "Monzo",
             "role_title": "Junior AI Engineer",
+            "idempotency_key": "mcp-invalid-transition-setup-1",
         },
     )
 
@@ -167,6 +172,7 @@ async def test_invalid_status_transition_returns_tool_error(
         {
             "application_id": created.structured_content["application_id"],
             "target_status": "offer",
+            "idempotency_key": "mcp-invalid-update-1",
         },
     )
 
@@ -188,6 +194,7 @@ async def test_list_applications_returns_structured_results(
         {
             "company_name": "Monzo",
             "role_title": "Junior AI Engineer",
+            "idempotency_key": "mcp-list-monzo-1",
         },
     )
     await client.call_tool(
@@ -195,6 +202,7 @@ async def test_list_applications_returns_structured_results(
         {
             "company_name": "Revolut",
             "role_title": "AI Engineer",
+            "idempotency_key": "mcp-list-revolut-1",
         },
     )
 
@@ -240,6 +248,7 @@ async def test_application_resource_returns_context(
         {
             "company_name": "Monzo",
             "role_title": "Junior AI Engineer",
+            "idempotency_key": "mcp-resource-setup-1",
         },
     )
 
@@ -281,3 +290,87 @@ async def test_pending_actions_resource_returns_context(
     assert "Pending Actions" in content.text
     assert "prepare_interview" in content.text
     assert "Prepare for technical interview." in content.text
+
+
+@pytest.mark.anyio
+async def test_create_application_tool_replays_idempotent_request(
+    mcp_client,
+) -> None:
+    client, applications, events, _ = mcp_client
+
+    arguments = {
+        "company_name": "Monzo",
+        "role_title": "Junior AI Engineer",
+        "idempotency_key": "mcp-replay-1",
+    }
+
+    first = await client.call_tool(
+        "create_application",
+        arguments,
+    )
+    replay = await client.call_tool(
+        "create_application",
+        arguments,
+    )
+
+    assert first.is_error is False
+    assert replay.is_error is False
+
+    assert first.structured_content is not None
+    assert replay.structured_content is not None
+
+    assert (
+        replay.structured_content["application_id"]
+        == first.structured_content["application_id"]
+    )
+
+    assert len(applications.all()) == 1
+    assert len(events.all()) == 1
+
+
+@pytest.mark.anyio
+async def test_update_status_tool_replays_idempotent_request(
+    mcp_client,
+) -> None:
+    client, _, events, _ = mcp_client
+
+    created = await client.call_tool(
+        "create_application",
+        {
+            "company_name": "Monzo",
+            "role_title": "Junior AI Engineer",
+            "idempotency_key": "mcp-update-replay-create-1",
+        },
+    )
+
+    assert created.structured_content is not None
+
+    arguments = {
+        "application_id": created.structured_content["application_id"],
+        "target_status": "preparing",
+        "idempotency_key": "mcp-update-replay-1",
+    }
+
+    first = await client.call_tool(
+        "update_application_status",
+        arguments,
+    )
+    replay = await client.call_tool(
+        "update_application_status",
+        arguments,
+    )
+
+    assert first.is_error is False
+    assert replay.is_error is False
+
+    assert first.structured_content is not None
+    assert replay.structured_content is not None
+
+    assert (
+        replay.structured_content["application_id"]
+        == first.structured_content["application_id"]
+    )
+    assert replay.structured_content["status"] == "preparing"
+
+    # One APPLICATION_CREATED + one STATUS_CHANGED.
+    assert len(events.all()) == 2

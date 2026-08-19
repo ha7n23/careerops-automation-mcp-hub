@@ -14,6 +14,9 @@ from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.dialects.postgresql import UUID as PostgreSQLUUID
 from sqlalchemy.orm import Mapped, mapped_column
 
+from careerops_automation_mcp_hub.application.idempotency import (
+    IdempotencyOperation,
+)
 from careerops_automation_mcp_hub.domain.action_item import (
     ActionItemStatus,
     ActionItemType,
@@ -291,5 +294,65 @@ class ApprovalRequestRecord(Base):
     )
     decided_by: Mapped[str | None] = mapped_column(
         String(128),
+        nullable=True,
+    )
+
+
+class IdempotencyRecord(Base):
+    __tablename__ = "idempotency_records"
+
+    __table_args__ = (
+        CheckConstraint(
+            _enum_check("operation", IdempotencyOperation),
+            name="ck_idempotency_records_operation",
+        ),
+        CheckConstraint(
+            "btrim(user_id) <> ''",
+            name="ck_idempotency_records_user_id_not_blank",
+        ),
+        CheckConstraint(
+            "btrim(idempotency_key) <> ''",
+            name="ck_idempotency_records_key_not_blank",
+        ),
+        CheckConstraint(
+            "char_length(request_fingerprint) = 64",
+            name="ck_idempotency_records_fingerprint_length",
+        ),
+        CheckConstraint(
+            "("
+            "response_payload IS NULL AND completed_at IS NULL"
+            ") OR ("
+            "response_payload IS NOT NULL AND completed_at IS NOT NULL"
+            ")",
+            name="ck_idempotency_records_completion_state",
+        ),
+    )
+
+    user_id: Mapped[str] = mapped_column(
+        String(128),
+        primary_key=True,
+    )
+    operation: Mapped[str] = mapped_column(
+        String(64),
+        primary_key=True,
+    )
+    idempotency_key: Mapped[str] = mapped_column(
+        String(128),
+        primary_key=True,
+    )
+    request_fingerprint: Mapped[str] = mapped_column(
+        String(64),
+        nullable=False,
+    )
+    response_payload: Mapped[dict[str, object] | None] = mapped_column(
+        JSONB(none_as_null=True),
+        nullable=True,
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+    )
+    completed_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
         nullable=True,
     )

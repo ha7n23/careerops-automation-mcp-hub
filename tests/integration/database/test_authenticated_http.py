@@ -58,6 +58,7 @@ _CREATE_APPLICATION_REQUEST = {
         "arguments": {
             "company_name": "Monzo",
             "role_title": "Junior AI Engineer",
+            "idempotency_key": "http-create-1",
         },
         "_meta": {
             "io.modelcontextprotocol/protocolVersion": "2026-07-28",

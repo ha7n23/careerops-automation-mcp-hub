@@ -4,6 +4,7 @@ from typing import Protocol, Self
 from careerops_automation_mcp_hub.application.ports.repositories import (
     ActionItemRepository,
     ApplicationEventRepository,
+    IdempotencyRepository,
     JobApplicationRepository,
 )
 
@@ -12,6 +13,7 @@ class ApplicationUnitOfWork(Protocol):
     applications: JobApplicationRepository
     events: ApplicationEventRepository
     actions: ActionItemRepository
+    idempotency: IdempotencyRepository
 
     async def __aenter__(self) -> Self:
         """Enter the transaction boundary."""

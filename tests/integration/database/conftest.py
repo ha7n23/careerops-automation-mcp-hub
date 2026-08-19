@@ -17,7 +17,8 @@ DEFAULT_TEST_DATABASE_URL = (
 
 _TRUNCATE_SQL = text(
     "TRUNCATE TABLE "
-    "approval_requests, application_events, action_items, job_applications "
+    "idempotency_records, approval_requests, application_events, "
+    "action_items, job_applications "
     "RESTART IDENTITY CASCADE"
 )
 

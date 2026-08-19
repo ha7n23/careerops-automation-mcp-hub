@@ -35,6 +35,7 @@ async def test_runtime_composes_mcp_server_with_postgresql(
                 {
                     "company_name": "Monzo",
                     "role_title": "Junior AI Engineer",
+                    "idempotency_key": "runtime-create-1",
                 },
             )
 

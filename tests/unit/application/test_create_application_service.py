@@ -2,6 +2,9 @@ from datetime import UTC, datetime
 
 import pytest
 
+from careerops_automation_mcp_hub.application.idempotency import (
+    IdempotencyConflictError,
+)
 from careerops_automation_mcp_hub.application.services.create_application import (
     CreateApplicationCommand,
     CreateApplicationService,
@@ -55,6 +58,7 @@ async def test_create_application_persists_application_and_event() -> None:
             company_name="Monzo",
             role_title="Junior AI Engineer",
             actor_id="USER-001",
+            idempotency_key="create-persist-1",
             now=now,
         )
     )
@@ -85,6 +89,7 @@ async def test_create_application_uses_domain_normalisation() -> None:
             company_name=" Monzo ",
             role_title=" Junior AI Engineer ",
             actor_id="USER-001",
+            idempotency_key="create-normalisation-1",
         )
     )
 
@@ -106,6 +111,7 @@ async def test_invalid_application_is_not_persisted() -> None:
                 company_name="   ",
                 role_title="Junior AI Engineer",
                 actor_id="USER-001",
+                idempotency_key="create-invalid-1",
             )
         )
 
@@ -114,3 +120,57 @@ async def test_invalid_application_is_not_persisted() -> None:
 
     # Domain validation fails before a transaction is opened.
     assert unit_of_work_factory.created == []
+
+
+@pytest.mark.anyio
+async def test_create_application_replays_same_idempotency_key() -> None:
+    service, applications, events, _ = build_service()
+
+    command = CreateApplicationCommand(
+        user_id="USER-001",
+        company_name="Monzo",
+        role_title="Junior AI Engineer",
+        actor_id="USER-001",
+        idempotency_key="workflow-123",
+    )
+
+    first = await service.execute(command)
+    replay = await service.execute(command)
+
+    assert replay.application.application_id == (first.application.application_id)
+    assert replay.event.event_id == first.event.event_id
+
+    assert applications.all() == (first.application,)
+    assert events.all() == (first.event,)
+
+
+@pytest.mark.anyio
+async def test_create_application_rejects_key_reuse_for_different_request() -> None:
+    service, applications, events, _ = build_service()
+
+    first = await service.execute(
+        CreateApplicationCommand(
+            user_id="USER-001",
+            company_name="Monzo",
+            role_title="Junior AI Engineer",
+            actor_id="USER-001",
+            idempotency_key="workflow-123",
+        )
+    )
+
+    with pytest.raises(
+        IdempotencyConflictError,
+        match="already used for a different request",
+    ):
+        await service.execute(
+            CreateApplicationCommand(
+                user_id="USER-001",
+                company_name="Monzo",
+                role_title="AI Engineer",
+                actor_id="USER-001",
+                idempotency_key="workflow-123",
+            )
+        )
+
+    assert applications.all() == (first.application,)
+    assert events.all() == (first.event,)
