@@ -3,6 +3,7 @@ from collections.abc import AsyncIterator
 
 import pytest
 from sqlalchemy import text
+from sqlalchemy.engine import make_url
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from careerops_automation_mcp_hub.infrastructure.database.session import (
@@ -27,19 +28,29 @@ def anyio_backend() -> str:
 
 
 @pytest.fixture
-async def postgres_session_factory() -> AsyncIterator[async_sessionmaker[AsyncSession]]:
-    """Provide a clean PostgreSQL session factory for one integration test."""
+def postgres_database_url() -> str:
+    """Return the explicitly isolated PostgreSQL integration-test URL."""
     database_url = os.getenv(
         "TEST_DATABASE_URL",
         DEFAULT_TEST_DATABASE_URL,
     )
 
-    if database_url.endswith("/careerops"):
+    database_name = make_url(database_url).database
+
+    if database_name != "careerops_test":
         raise RuntimeError(
-            "Integration tests must not run against the development database."
+            "Integration tests may run only against the 'careerops_test' database."
         )
 
-    engine = create_database_engine(database_url)
+    return database_url
+
+
+@pytest.fixture
+async def postgres_session_factory(
+    postgres_database_url: str,
+) -> AsyncIterator[async_sessionmaker[AsyncSession]]:
+    """Provide a clean PostgreSQL session factory for one integration test."""
+    engine = create_database_engine(postgres_database_url)
     session_factory = create_session_factory(engine)
 
     async with engine.begin() as connection:
