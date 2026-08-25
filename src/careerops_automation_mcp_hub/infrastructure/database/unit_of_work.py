@@ -9,12 +9,16 @@ from sqlalchemy.ext.asyncio import (
 from careerops_automation_mcp_hub.application.ports.repositories import (
     ActionItemRepository,
     ApplicationEventRepository,
+    ApplicationPreparationRepository,
+    ApplicationReviewSubmissionRepository,
     IdempotencyRepository,
     JobApplicationRepository,
 )
 from careerops_automation_mcp_hub.infrastructure.database.repositories import (
     SqlAlchemyActionItemRepository,
     SqlAlchemyApplicationEventRepository,
+    SqlAlchemyApplicationPreparationRepository,
+    SqlAlchemyApplicationReviewSubmissionRepository,
     SqlAlchemyIdempotencyRepository,
     SqlAlchemyJobApplicationRepository,
 )
@@ -33,6 +37,12 @@ class SqlAlchemyApplicationUnitOfWork:
             session
         )
         self.actions: ActionItemRepository = SqlAlchemyActionItemRepository(session)
+        self.preparations: ApplicationPreparationRepository = (
+            SqlAlchemyApplicationPreparationRepository(session)
+        )
+        self.review_submissions: ApplicationReviewSubmissionRepository = (
+            SqlAlchemyApplicationReviewSubmissionRepository(session)
+        )
         self.idempotency: IdempotencyRepository = SqlAlchemyIdempotencyRepository(
             session
         )

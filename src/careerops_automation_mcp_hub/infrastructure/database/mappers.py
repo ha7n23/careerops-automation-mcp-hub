@@ -7,10 +7,23 @@ from careerops_automation_mcp_hub.domain.application_event import ApplicationEve
 from careerops_automation_mcp_hub.domain.application_lifecycle import (
     ApplicationStatus,
 )
+from careerops_automation_mcp_hub.domain.application_preparation import (
+    ApplicationPreparation,
+    ApplicationPreparationStatus,
+)
+from careerops_automation_mcp_hub.domain.application_review import (
+    ApplicationReviewAction,
+    ApplicationReviewEdit,
+    ApplicationReviewOutcome,
+    ApplicationReviewSubmission,
+    ApplicationReviewSubmissionStatus,
+)
 from careerops_automation_mcp_hub.domain.job_application import JobApplication
 from careerops_automation_mcp_hub.infrastructure.database.models import (
     ActionItemRecord,
     ApplicationEventRecord,
+    ApplicationPreparationRecord,
+    ApplicationReviewSubmissionRecord,
     JobApplicationRecord,
 )
 
@@ -91,4 +104,102 @@ def action_item_from_record(
         due_at=record.due_at,
         created_at=record.created_at,
         completed_at=record.completed_at,
+    )
+
+
+def application_preparation_to_record(
+    preparation: ApplicationPreparation,
+) -> ApplicationPreparationRecord:
+    """Convert preparation orchestration state to persistence."""
+
+    return ApplicationPreparationRecord(
+        preparation_id=preparation.preparation_id,
+        application_id=preparation.application_id,
+        user_id=preparation.user_id,
+        status=preparation.status.value,
+        agent_engine_job_id=preparation.agent_engine_job_id,
+        agent_engine_thread_id=preparation.agent_engine_thread_id,
+        error_message=preparation.error_message,
+        created_at=preparation.created_at,
+        updated_at=preparation.updated_at,
+    )
+
+
+def application_preparation_from_record(
+    record: ApplicationPreparationRecord,
+) -> ApplicationPreparation:
+    """Rehydrate durable preparation orchestration state."""
+
+    return ApplicationPreparation(
+        preparation_id=record.preparation_id,
+        application_id=record.application_id,
+        user_id=record.user_id,
+        status=ApplicationPreparationStatus(record.status),
+        agent_engine_job_id=record.agent_engine_job_id,
+        agent_engine_thread_id=record.agent_engine_thread_id,
+        error_message=record.error_message,
+        created_at=record.created_at,
+        updated_at=record.updated_at,
+    )
+
+
+def application_review_submission_to_record(
+    submission: ApplicationReviewSubmission,
+) -> ApplicationReviewSubmissionRecord:
+    return ApplicationReviewSubmissionRecord(
+        review_submission_id=submission.review_submission_id,
+        preparation_id=submission.preparation_id,
+        application_id=submission.application_id,
+        user_id=submission.user_id,
+        thread_id=submission.thread_id,
+        idempotency_key=submission.idempotency_key,
+        action=submission.action.value,
+        approved_proposal_ids=list(submission.approved_proposal_ids),
+        rejected_proposal_ids=list(submission.rejected_proposal_ids),
+        edits=[
+            {
+                "proposal_id": edit.proposal_id,
+                "edited_text": edit.edited_text,
+            }
+            for edit in submission.edits
+        ],
+        reviewer_comment=submission.reviewer_comment,
+        status=submission.status.value,
+        outcome=(submission.outcome.value if submission.outcome is not None else None),
+        error_message=submission.error_message,
+        created_at=submission.created_at,
+        updated_at=submission.updated_at,
+    )
+
+
+def application_review_submission_from_record(
+    record: ApplicationReviewSubmissionRecord,
+) -> ApplicationReviewSubmission:
+    return ApplicationReviewSubmission(
+        review_submission_id=record.review_submission_id,
+        preparation_id=record.preparation_id,
+        application_id=record.application_id,
+        user_id=record.user_id,
+        thread_id=record.thread_id,
+        idempotency_key=record.idempotency_key,
+        action=ApplicationReviewAction(record.action),
+        approved_proposal_ids=tuple(record.approved_proposal_ids),
+        rejected_proposal_ids=tuple(record.rejected_proposal_ids),
+        edits=tuple(
+            ApplicationReviewEdit(
+                proposal_id=edit["proposal_id"],
+                edited_text=edit["edited_text"],
+            )
+            for edit in record.edits
+        ),
+        reviewer_comment=record.reviewer_comment,
+        status=ApplicationReviewSubmissionStatus(record.status),
+        outcome=(
+            ApplicationReviewOutcome(record.outcome)
+            if record.outcome is not None
+            else None
+        ),
+        error_message=record.error_message,
+        created_at=record.created_at,
+        updated_at=record.updated_at,
     )

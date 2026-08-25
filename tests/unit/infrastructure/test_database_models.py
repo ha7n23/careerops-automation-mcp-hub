@@ -4,6 +4,7 @@ from careerops_automation_mcp_hub.infrastructure.database.base import Base
 from careerops_automation_mcp_hub.infrastructure.database.models import (
     ActionItemRecord,
     ApplicationEventRecord,
+    ApplicationPreparationRecord,
     ApprovalRequestRecord,
     IdempotencyRecord,
     JobApplicationRecord,
@@ -14,6 +15,8 @@ def test_expected_database_tables_are_registered() -> None:
     assert set(Base.metadata.tables) == {
         "action_items",
         "application_events",
+        "application_preparations",
+        "application_review_submissions",
         "approval_requests",
         "idempotency_records",
         "job_applications",
@@ -70,6 +73,7 @@ def test_domain_enum_check_constraints_are_present() -> None:
         "ck_action_items_status",
         "ck_approval_requests_action_type",
         "ck_approval_requests_status",
+        "ck_application_preparations_status",
         "ck_idempotency_records_operation",
     }.issubset(constraint_names)
 
@@ -84,3 +88,12 @@ def test_idempotency_record_has_scoped_composite_primary_key() -> None:
         "operation",
         "idempotency_key",
     }
+
+
+def test_application_preparation_references_job_application() -> None:
+    foreign_keys = {
+        foreign_key.target_fullname
+        for foreign_key in ApplicationPreparationRecord.__table__.foreign_keys
+    }
+
+    assert "job_applications.application_id" in foreign_keys

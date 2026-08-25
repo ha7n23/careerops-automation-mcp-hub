@@ -25,6 +25,10 @@ from careerops_automation_mcp_hub.application.services.list_applications import 
     ListApplicationsQuery,
     ListApplicationsService,
 )
+from careerops_automation_mcp_hub.application.services.prepare_application import (
+    PrepareApplicationCommand,
+    PrepareApplicationService,
+)
 from careerops_automation_mcp_hub.application.services.update_application_status import (
     UpdateApplicationStatusCommand,
     UpdateApplicationStatusService,
@@ -38,6 +42,7 @@ from careerops_automation_mcp_hub.mcp.schemas import (
     ApplicationListResult,
     ApplicationSummary,
     PendingActionsResult,
+    PrepareApplicationToolResult,
 )
 
 
@@ -45,6 +50,7 @@ def build_mcp_server(
     *,
     principal_provider: PrincipalProvider,
     unit_of_work_factory: ApplicationUnitOfWorkFactory,
+    prepare_application_service: PrepareApplicationService,
     token_verifier: TokenVerifier | None = None,
     auth: AuthSettings | None = None,
 ) -> MCPServer:
@@ -94,6 +100,40 @@ def build_mcp_server(
         )
 
         return ApplicationSummary.from_domain(result.application)
+
+    @mcp.tool(
+        annotations=ToolAnnotations(
+            read_only_hint=False,
+            destructive_hint=False,
+            idempotent_hint=True,
+            open_world_hint=False,
+        )
+    )
+    async def prepare_application(
+        application_id: UUID,
+        job_description: str,
+    ) -> PrepareApplicationToolResult:
+        """Prepare a saved application using the CareerOps Agent Engine.
+
+        This may run evidence-grounded AI analysis and CV proposal generation
+        inside CareerOps. It does not submit an application to an employer.
+
+        Durable preparation state prevents an ambiguous remote outcome from
+        being blindly retried.
+        """
+
+        principal = principal_provider.get_principal()
+
+        result = await prepare_application_service.execute(
+            PrepareApplicationCommand(
+                user_id=principal.user_id,
+                application_id=application_id,
+                job_description=job_description,
+                actor_id=principal.actor_id,
+            )
+        )
+
+        return PrepareApplicationToolResult.from_application_result(result)
 
     @mcp.tool(
         annotations=ToolAnnotations(

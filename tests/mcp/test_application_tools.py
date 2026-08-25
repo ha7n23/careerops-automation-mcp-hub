@@ -5,6 +5,14 @@ import pytest
 from mcp import Client
 from mcp.types import TextResourceContents
 
+from careerops_automation_mcp_hub.application.agent_engine import (
+    AgentEngineAnalysisStatus,
+    AgentEngineJobAnalysis,
+    AgentEngineReviewDecision,
+)
+from careerops_automation_mcp_hub.application.services.prepare_application import (
+    PrepareApplicationService,
+)
 from careerops_automation_mcp_hub.domain.action_item import (
     ActionItem,
     ActionItemType,
@@ -24,6 +32,39 @@ from careerops_automation_mcp_hub.mcp.principal import (
 from careerops_automation_mcp_hub.mcp.server import build_mcp_server
 
 
+class _MCPAgentEngineClient:
+    async def analyse_job(
+        self,
+        *,
+        user_id: str,
+        job_id: str,
+        job_description: str,
+    ) -> AgentEngineJobAnalysis:
+        return AgentEngineJobAnalysis(
+            status=AgentEngineAnalysisStatus.COMPLETED,
+            thread_id="THR-MCP-TEST",
+            job_id=job_id,
+            role_title="Junior AI Engineer",
+            fit_score=0.75,
+            requirements=(),
+            evidence_matches=(),
+            cv_proposals=(),
+            reviewable_proposal_ids=(),
+            blocked_proposal_ids=(),
+            allowed_review_actions=(),
+            review_status=None,
+        )
+
+    async def review_job_analysis(
+        self,
+        *,
+        user_id: str,
+        thread_id: str,
+        decision: AgentEngineReviewDecision,
+    ) -> AgentEngineJobAnalysis:
+        raise AssertionError("Review is not expected in application MCP tests.")
+
+
 @pytest.fixture
 def anyio_backend() -> str:
     return "asyncio"
@@ -41,6 +82,11 @@ async def mcp_client():
         actions=actions,
     )
 
+    prepare_application_service = PrepareApplicationService(
+        unit_of_work_factory,
+        _MCPAgentEngineClient(),
+    )
+
     server = build_mcp_server(
         principal_provider=StaticPrincipalProvider(
             Principal(
@@ -49,6 +95,7 @@ async def mcp_client():
             )
         ),
         unit_of_work_factory=unit_of_work_factory,
+        prepare_application_service=prepare_application_service,
     )
 
     async with Client(server, raise_exceptions=True) as client:

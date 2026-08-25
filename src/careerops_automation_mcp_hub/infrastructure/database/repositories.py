@@ -18,16 +18,28 @@ from careerops_automation_mcp_hub.domain.application_event import ApplicationEve
 from careerops_automation_mcp_hub.domain.application_lifecycle import (
     ApplicationStatus,
 )
+from careerops_automation_mcp_hub.domain.application_preparation import (
+    ApplicationPreparation,
+)
+from careerops_automation_mcp_hub.domain.application_review import (
+    ApplicationReviewSubmission,
+)
 from careerops_automation_mcp_hub.domain.job_application import JobApplication
 from careerops_automation_mcp_hub.infrastructure.database.mappers import (
     action_item_from_record,
     action_item_to_record,
     application_event_to_record,
+    application_preparation_from_record,
+    application_preparation_to_record,
+    application_review_submission_from_record,
+    application_review_submission_to_record,
     job_application_from_record,
     job_application_to_record,
 )
 from careerops_automation_mcp_hub.infrastructure.database.models import (
     ActionItemRecord,
+    ApplicationPreparationRecord,
+    ApplicationReviewSubmissionRecord,
     IdempotencyRecord,
     JobApplicationRecord,
 )
@@ -143,6 +155,117 @@ class SqlAlchemyActionItemRepository:
         records = result.scalars().all()
 
         return tuple(action_item_from_record(record) for record in records)
+
+
+class SqlAlchemyApplicationPreparationRepository:
+    def __init__(self, session: AsyncSession) -> None:
+        self._session = session
+
+    async def add(
+        self,
+        preparation: ApplicationPreparation,
+    ) -> None:
+        self._session.add(application_preparation_to_record(preparation))
+        await self._session.flush()
+
+    async def get_for_application(
+        self,
+        *,
+        user_id: str,
+        application_id: UUID,
+    ) -> ApplicationPreparation | None:
+        statement = select(ApplicationPreparationRecord).where(
+            ApplicationPreparationRecord.user_id == user_id,
+            ApplicationPreparationRecord.application_id == application_id,
+        )
+
+        result = await self._session.execute(statement)
+        record = result.scalar_one_or_none()
+
+        if record is None:
+            return None
+
+        return application_preparation_from_record(record)
+
+    async def save(
+        self,
+        preparation: ApplicationPreparation,
+    ) -> None:
+        statement = (
+            update(ApplicationPreparationRecord)
+            .where(
+                ApplicationPreparationRecord.preparation_id
+                == preparation.preparation_id,
+                ApplicationPreparationRecord.user_id == preparation.user_id,
+                ApplicationPreparationRecord.application_id
+                == preparation.application_id,
+            )
+            .values(
+                status=preparation.status.value,
+                agent_engine_thread_id=preparation.agent_engine_thread_id,
+                error_message=preparation.error_message,
+                updated_at=preparation.updated_at,
+            )
+        )
+
+        await self._session.execute(statement)
+
+
+class SqlAlchemyApplicationReviewSubmissionRepository:
+    def __init__(
+        self,
+        session: AsyncSession,
+    ) -> None:
+        self._session = session
+
+    async def add(
+        self,
+        submission: ApplicationReviewSubmission,
+    ) -> None:
+        self._session.add(application_review_submission_to_record(submission))
+        await self._session.flush()
+
+    async def get_by_idempotency_key(
+        self,
+        *,
+        user_id: str,
+        idempotency_key: str,
+    ) -> ApplicationReviewSubmission | None:
+        statement = select(ApplicationReviewSubmissionRecord).where(
+            ApplicationReviewSubmissionRecord.user_id == user_id,
+            ApplicationReviewSubmissionRecord.idempotency_key == idempotency_key,
+        )
+
+        result = await self._session.execute(statement)
+        record = result.scalar_one_or_none()
+
+        if record is None:
+            return None
+
+        return application_review_submission_from_record(record)
+
+    async def save(
+        self,
+        submission: ApplicationReviewSubmission,
+    ) -> None:
+        statement = (
+            update(ApplicationReviewSubmissionRecord)
+            .where(
+                ApplicationReviewSubmissionRecord.review_submission_id
+                == submission.review_submission_id,
+                ApplicationReviewSubmissionRecord.user_id == submission.user_id,
+            )
+            .values(
+                status=submission.status.value,
+                outcome=(
+                    submission.outcome.value if submission.outcome is not None else None
+                ),
+                error_message=submission.error_message,
+                updated_at=submission.updated_at,
+            )
+        )
+
+        await self._session.execute(statement)
 
 
 class SqlAlchemyIdempotencyRepository:

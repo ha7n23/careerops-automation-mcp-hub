@@ -9,6 +9,7 @@ from sqlalchemy import (
     Index,
     String,
     Text,
+    UniqueConstraint,
 )
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.dialects.postgresql import UUID as PostgreSQLUUID
@@ -26,6 +27,12 @@ from careerops_automation_mcp_hub.domain.application_event import (
 )
 from careerops_automation_mcp_hub.domain.application_lifecycle import (
     ApplicationStatus,
+)
+from careerops_automation_mcp_hub.domain.application_preparation import (
+    ApplicationPreparationStatus,
+)
+from careerops_automation_mcp_hub.domain.application_review import (
+    ApplicationReviewSubmissionStatus,
 )
 from careerops_automation_mcp_hub.domain.approval_request import (
     ApprovalActionType,
@@ -89,6 +96,238 @@ class JobApplicationRecord(Base):
         String(32),
         nullable=False,
     )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+    )
+
+
+class ApplicationPreparationRecord(Base):
+    __tablename__ = "application_preparations"
+
+    __table_args__ = (
+        CheckConstraint(
+            _enum_check("status", ApplicationPreparationStatus),
+            name="ck_application_preparations_status",
+        ),
+        CheckConstraint(
+            "btrim(user_id) <> ''",
+            name="ck_application_preparations_user_id_not_blank",
+        ),
+        CheckConstraint(
+            "btrim(agent_engine_job_id) <> ''",
+            name="ck_application_preparations_job_id_not_blank",
+        ),
+        CheckConstraint(
+            ("agent_engine_thread_id IS NULL OR btrim(agent_engine_thread_id) <> ''"),
+            name="ck_application_preparations_thread_id_not_blank",
+        ),
+        CheckConstraint(
+            "error_message IS NULL OR btrim(error_message) <> ''",
+            name="ck_application_preparations_error_not_blank",
+        ),
+        CheckConstraint(
+            "("
+            "status IN ('pending', 'starting') "
+            "AND agent_engine_thread_id IS NULL "
+            "AND error_message IS NULL"
+            ") OR ("
+            "status IN ('awaiting_review', 'completed') "
+            "AND agent_engine_thread_id IS NOT NULL "
+            "AND error_message IS NULL"
+            ") OR ("
+            "status IN ('failed', 'outcome_unknown') "
+            "AND agent_engine_thread_id IS NULL "
+            "AND error_message IS NOT NULL"
+            ")",
+            name="ck_application_preparations_state",
+        ),
+        UniqueConstraint(
+            "application_id",
+            name="uq_application_preparations_application",
+        ),
+        UniqueConstraint(
+            "agent_engine_job_id",
+            name="uq_application_preparations_agent_engine_job",
+        ),
+        Index(
+            "ix_application_preparations_user_status",
+            "user_id",
+            "status",
+        ),
+    )
+
+    preparation_id: Mapped[UUID] = mapped_column(
+        PostgreSQLUUID(as_uuid=True),
+        primary_key=True,
+    )
+    application_id: Mapped[UUID] = mapped_column(
+        PostgreSQLUUID(as_uuid=True),
+        ForeignKey("job_applications.application_id"),
+        nullable=False,
+    )
+    user_id: Mapped[str] = mapped_column(
+        String(128),
+        nullable=False,
+    )
+    status: Mapped[str] = mapped_column(
+        String(32),
+        nullable=False,
+    )
+    agent_engine_job_id: Mapped[str] = mapped_column(
+        String(128),
+        nullable=False,
+    )
+    agent_engine_thread_id: Mapped[str | None] = mapped_column(
+        String(128),
+        nullable=True,
+    )
+    error_message: Mapped[str | None] = mapped_column(
+        Text,
+        nullable=True,
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+    )
+
+
+class ApplicationReviewSubmissionRecord(Base):
+    __tablename__ = "application_review_submissions"
+
+    __table_args__ = (
+        CheckConstraint(
+            _enum_check("status", ApplicationReviewSubmissionStatus),
+            name="ck_application_review_submissions_status",
+        ),
+        CheckConstraint(
+            "btrim(user_id) <> ''",
+            name="ck_application_review_submissions_user_id_not_blank",
+        ),
+        CheckConstraint(
+            "btrim(thread_id) <> ''",
+            name="ck_application_review_submissions_thread_id_not_blank",
+        ),
+        CheckConstraint(
+            "btrim(idempotency_key) <> ''",
+            name="ck_application_review_submissions_key_not_blank",
+        ),
+        CheckConstraint(
+            "btrim(action) <> ''",
+            name="ck_application_review_submissions_action_not_blank",
+        ),
+        CheckConstraint(
+            (
+                "("
+                "status IN ('pending', 'submitting') "
+                "AND outcome IS NULL "
+                "AND error_message IS NULL"
+                ") OR ("
+                "status = 'completed' "
+                "AND outcome IS NOT NULL "
+                "AND error_message IS NULL"
+                ") OR ("
+                "status IN ('failed', 'outcome_unknown') "
+                "AND outcome IS NULL "
+                "AND error_message IS NOT NULL"
+                ")"
+            ),
+            name="ck_application_review_submissions_state",
+        ),
+        CheckConstraint(
+            ("action IN ('approve', 'edit', 'reject', 'regenerate')"),
+            name="ck_application_review_submissions_action",
+        ),
+        CheckConstraint(
+            ("outcome IS NULL OR outcome IN ('awaiting_review', 'completed')"),
+            name="ck_application_review_submissions_outcome",
+        ),
+        CheckConstraint(
+            "error_message IS NULL OR btrim(error_message) <> ''",
+            name="ck_application_review_submissions_error_not_blank",
+        ),
+        UniqueConstraint(
+            "user_id",
+            "idempotency_key",
+            name="uq_application_review_submissions_user_key",
+        ),
+        Index(
+            "ix_application_review_submissions_preparation",
+            "preparation_id",
+            "created_at",
+        ),
+    )
+
+    review_submission_id: Mapped[UUID] = mapped_column(
+        PostgreSQLUUID(as_uuid=True),
+        primary_key=True,
+    )
+    preparation_id: Mapped[UUID] = mapped_column(
+        PostgreSQLUUID(as_uuid=True),
+        ForeignKey("application_preparations.preparation_id"),
+        nullable=False,
+    )
+    application_id: Mapped[UUID] = mapped_column(
+        PostgreSQLUUID(as_uuid=True),
+        ForeignKey("job_applications.application_id"),
+        nullable=False,
+    )
+    user_id: Mapped[str] = mapped_column(
+        String(128),
+        nullable=False,
+    )
+    thread_id: Mapped[str] = mapped_column(
+        String(128),
+        nullable=False,
+    )
+    idempotency_key: Mapped[str] = mapped_column(
+        String(255),
+        nullable=False,
+    )
+    action: Mapped[str] = mapped_column(
+        String(32),
+        nullable=False,
+    )
+
+    approved_proposal_ids: Mapped[list[str]] = mapped_column(
+        JSONB,
+        nullable=False,
+    )
+    rejected_proposal_ids: Mapped[list[str]] = mapped_column(
+        JSONB,
+        nullable=False,
+    )
+    edits: Mapped[list[dict[str, str]]] = mapped_column(
+        JSONB,
+        nullable=False,
+    )
+
+    reviewer_comment: Mapped[str | None] = mapped_column(
+        Text,
+        nullable=True,
+    )
+
+    status: Mapped[str] = mapped_column(
+        String(32),
+        nullable=False,
+    )
+    outcome: Mapped[str | None] = mapped_column(
+        String(32),
+        nullable=True,
+    )
+    error_message: Mapped[str | None] = mapped_column(
+        Text,
+        nullable=True,
+    )
+
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         nullable=False,

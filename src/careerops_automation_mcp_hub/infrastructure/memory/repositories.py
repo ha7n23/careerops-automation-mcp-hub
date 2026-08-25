@@ -17,6 +17,12 @@ from careerops_automation_mcp_hub.domain.application_event import (
 from careerops_automation_mcp_hub.domain.application_lifecycle import (
     ApplicationStatus,
 )
+from careerops_automation_mcp_hub.domain.application_preparation import (
+    ApplicationPreparation,
+)
+from careerops_automation_mcp_hub.domain.application_review import (
+    ApplicationReviewSubmission,
+)
 from careerops_automation_mcp_hub.domain.job_application import (
     JobApplication,
 )
@@ -206,3 +212,73 @@ class InMemoryIdempotencyRepository:
 
         existing.response_payload = dict(response_payload)
         existing.completed_at = completed_at
+
+
+class InMemoryApplicationPreparationRepository:
+    def __init__(self) -> None:
+        self._preparations: dict[UUID, ApplicationPreparation] = {}
+
+    async def add(
+        self,
+        preparation: ApplicationPreparation,
+    ) -> None:
+        self._preparations[preparation.preparation_id] = preparation
+
+    async def get_for_application(
+        self,
+        *,
+        user_id: str,
+        application_id: UUID,
+    ) -> ApplicationPreparation | None:
+        for preparation in self._preparations.values():
+            if (
+                preparation.user_id == user_id
+                and preparation.application_id == application_id
+            ):
+                return preparation
+
+        return None
+
+    async def save(
+        self,
+        preparation: ApplicationPreparation,
+    ) -> None:
+        self._preparations[preparation.preparation_id] = preparation
+
+    def all(self) -> tuple[ApplicationPreparation, ...]:
+        return tuple(self._preparations.values())
+
+
+class InMemoryApplicationReviewSubmissionRepository:
+    def __init__(self) -> None:
+        self._submissions: dict[UUID, ApplicationReviewSubmission] = {}
+
+    async def add(
+        self,
+        submission: ApplicationReviewSubmission,
+    ) -> None:
+        self._submissions[submission.review_submission_id] = submission
+
+    async def get_by_idempotency_key(
+        self,
+        *,
+        user_id: str,
+        idempotency_key: str,
+    ) -> ApplicationReviewSubmission | None:
+        for submission in self._submissions.values():
+            if (
+                submission.user_id == user_id
+                and submission.idempotency_key == idempotency_key
+            ):
+                return submission
+
+        return None
+
+    async def save(
+        self,
+        submission: ApplicationReviewSubmission,
+    ) -> None:
+        self._submissions[submission.review_submission_id] = submission
+
+    def all(self) -> tuple[ApplicationReviewSubmission, ...]:
+        return tuple(self._submissions.values())

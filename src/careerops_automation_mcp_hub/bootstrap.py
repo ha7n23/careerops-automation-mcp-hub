@@ -7,6 +7,9 @@ from mcp.server.auth.settings import AuthSettings
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncEngine
 
+from careerops_automation_mcp_hub.application.services.prepare_application import (
+    PrepareApplicationService,
+)
 from careerops_automation_mcp_hub.core.config import Settings, get_settings
 from careerops_automation_mcp_hub.infrastructure.agent_engine.http_client import (
     HttpAgentEngineClient,
@@ -38,6 +41,7 @@ class CareerOpsRuntime:
     unit_of_work_factory: SqlAlchemyApplicationUnitOfWorkFactory
     agent_engine_http_client: httpx.AsyncClient
     agent_engine_client: HttpAgentEngineClient
+    prepare_application_service: PrepareApplicationService
 
     def build_mcp_server_for_principal(
         self,
@@ -86,6 +90,7 @@ class CareerOpsRuntime:
         return build_application_mcp_server(
             principal_provider=principal_provider,
             unit_of_work_factory=self.unit_of_work_factory,
+            prepare_application_service=self.prepare_application_service,
             token_verifier=token_verifier,
             auth=auth,
         )
@@ -131,10 +136,16 @@ def create_runtime(
         service_key=(resolved_settings.agent_engine_service_key.get_secret_value()),
     )
 
+    prepare_application_service = PrepareApplicationService(
+        unit_of_work_factory,
+        agent_engine_client,
+    )
+
     return CareerOpsRuntime(
         settings=resolved_settings,
         engine=engine,
         unit_of_work_factory=unit_of_work_factory,
         agent_engine_http_client=agent_engine_http_client,
         agent_engine_client=agent_engine_client,
+        prepare_application_service=prepare_application_service,
     )

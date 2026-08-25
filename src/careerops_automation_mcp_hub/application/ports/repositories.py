@@ -12,6 +12,12 @@ from careerops_automation_mcp_hub.domain.application_event import ApplicationEve
 from careerops_automation_mcp_hub.domain.application_lifecycle import (
     ApplicationStatus,
 )
+from careerops_automation_mcp_hub.domain.application_preparation import (
+    ApplicationPreparation,
+)
+from careerops_automation_mcp_hub.domain.application_review import (
+    ApplicationReviewSubmission,
+)
 from careerops_automation_mcp_hub.domain.job_application import JobApplication
 
 
@@ -57,6 +63,50 @@ class ActionItemRepository(Protocol):
     ) -> tuple[ActionItem, ...]:
         """Return pending actions available to one user."""
         ...
+
+
+class ApplicationPreparationRepository(Protocol):
+    async def add(
+        self,
+        preparation: ApplicationPreparation,
+    ) -> None:
+        """Persist a new application-preparation workflow."""
+
+    async def get_for_application(
+        self,
+        *,
+        user_id: str,
+        application_id: UUID,
+    ) -> ApplicationPreparation | None:
+        """Return the preparation workflow for one user-scoped application."""
+
+    async def save(
+        self,
+        preparation: ApplicationPreparation,
+    ) -> None:
+        """Persist changes to an existing preparation workflow."""
+
+
+class ApplicationReviewSubmissionRepository(Protocol):
+    async def add(
+        self,
+        submission: ApplicationReviewSubmission,
+    ) -> None:
+        """Persist a new human-review submission."""
+
+    async def get_by_idempotency_key(
+        self,
+        *,
+        user_id: str,
+        idempotency_key: str,
+    ) -> ApplicationReviewSubmission | None:
+        """Return one user-scoped review submission."""
+
+    async def save(
+        self,
+        submission: ApplicationReviewSubmission,
+    ) -> None:
+        """Persist changes to an existing review submission."""
 
 
 class IdempotencyRepository(Protocol):

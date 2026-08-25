@@ -4,6 +4,8 @@ from typing import Protocol, Self
 from careerops_automation_mcp_hub.application.ports.repositories import (
     ActionItemRepository,
     ApplicationEventRepository,
+    ApplicationPreparationRepository,
+    ApplicationReviewSubmissionRepository,
     IdempotencyRepository,
     JobApplicationRepository,
 )
@@ -13,6 +15,8 @@ class ApplicationUnitOfWork(Protocol):
     applications: JobApplicationRepository
     events: ApplicationEventRepository
     actions: ActionItemRepository
+    preparations: ApplicationPreparationRepository
+    review_submissions: ApplicationReviewSubmissionRepository
     idempotency: IdempotencyRepository
 
     async def __aenter__(self) -> Self:

@@ -2,6 +2,9 @@ import httpx
 import pytest
 from pydantic import AnyHttpUrl, SecretStr
 
+from careerops_automation_mcp_hub.application.services.prepare_application import (
+    PrepareApplicationService,
+)
 from careerops_automation_mcp_hub.bootstrap import create_runtime
 from careerops_automation_mcp_hub.core.config import Settings
 from careerops_automation_mcp_hub.infrastructure.agent_engine.http_client import (
@@ -33,6 +36,11 @@ async def test_runtime_owns_agent_engine_http_client_lifecycle() -> None:
     await runtime.close()
 
     assert runtime.agent_engine_http_client.is_closed is True
+
+    assert isinstance(
+        runtime.prepare_application_service,
+        PrepareApplicationService,
+    )
 
 
 def test_settings_reject_short_agent_engine_service_key() -> None:
