@@ -34,6 +34,7 @@ class StubTokenVerifier(TokenVerifier):
 def build_test_settings(database_url: str) -> Settings:
     return Settings(
         database_url=SecretStr(database_url),
+        agent_engine_service_key=SecretStr("a" * 32),
         auth_issuer_url=AnyHttpUrl("https://auth.example.com"),
         mcp_resource_url=AnyHttpUrl("http://testserver/mcp"),
         mcp_host="testserver",

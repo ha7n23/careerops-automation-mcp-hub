@@ -1,5 +1,6 @@
 from dataclasses import dataclass
 
+import httpx
 from mcp.server import MCPServer
 from mcp.server.auth.provider import TokenVerifier
 from mcp.server.auth.settings import AuthSettings
@@ -7,6 +8,9 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncEngine
 
 from careerops_automation_mcp_hub.core.config import Settings, get_settings
+from careerops_automation_mcp_hub.infrastructure.agent_engine.http_client import (
+    HttpAgentEngineClient,
+)
 from careerops_automation_mcp_hub.infrastructure.database.session import (
     create_database_engine,
     create_session_factory,
@@ -32,6 +36,8 @@ class CareerOpsRuntime:
     settings: Settings
     engine: AsyncEngine
     unit_of_work_factory: SqlAlchemyApplicationUnitOfWorkFactory
+    agent_engine_http_client: httpx.AsyncClient
+    agent_engine_client: HttpAgentEngineClient
 
     def build_mcp_server_for_principal(
         self,
@@ -91,7 +97,10 @@ class CareerOpsRuntime:
 
     async def close(self) -> None:
         """Release long-lived runtime resources."""
-        await self.engine.dispose()
+        try:
+            await self.agent_engine_http_client.aclose()
+        finally:
+            await self.engine.dispose()
 
 
 def create_runtime(
@@ -105,8 +114,27 @@ def create_runtime(
 
     unit_of_work_factory = SqlAlchemyApplicationUnitOfWorkFactory(session_factory)
 
+    agent_engine_timeout = httpx.Timeout(
+        connect=resolved_settings.agent_engine_connect_timeout_seconds,
+        read=resolved_settings.agent_engine_read_timeout_seconds,
+        write=resolved_settings.agent_engine_write_timeout_seconds,
+        pool=resolved_settings.agent_engine_pool_timeout_seconds,
+    )
+
+    agent_engine_http_client = httpx.AsyncClient(
+        base_url=str(resolved_settings.agent_engine_base_url),
+        timeout=agent_engine_timeout,
+    )
+
+    agent_engine_client = HttpAgentEngineClient(
+        agent_engine_http_client,
+        service_key=(resolved_settings.agent_engine_service_key.get_secret_value()),
+    )
+
     return CareerOpsRuntime(
         settings=resolved_settings,
         engine=engine,
         unit_of_work_factory=unit_of_work_factory,
+        agent_engine_http_client=agent_engine_http_client,
+        agent_engine_client=agent_engine_client,
     )

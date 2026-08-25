@@ -12,6 +12,7 @@ def test_production_factory_builds_runnable_app(
         database_url=SecretStr(
             "postgresql+asyncpg://careerops:careerops@127.0.0.1:65432/careerops_test"
         ),
+        agent_engine_service_key=SecretStr("a" * 32),
         auth_issuer_url=AnyHttpUrl("https://auth.test/"),
         auth_jwks_url=AnyHttpUrl("https://auth.test/.well-known/jwks.json"),
         auth_audience="careerops-automation-mcp-hub",

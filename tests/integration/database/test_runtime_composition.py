@@ -19,6 +19,7 @@ async def test_runtime_composes_mcp_server_with_postgresql(
 ) -> None:
     settings = Settings(
         database_url=SecretStr(postgres_database_url),
+        agent_engine_service_key=SecretStr("a" * 32),
     )
 
     runtime = create_runtime(settings)
