@@ -99,6 +99,27 @@ class ApplicationPreparation:
         self.status = ApplicationPreparationStatus.COMPLETED
         self.updated_at = at or datetime.now(UTC)
 
+    def mark_completed_after_review(
+        self,
+        *,
+        at: datetime | None = None,
+    ) -> None:
+        """Record completion after a successful human review."""
+
+        if self.status is not ApplicationPreparationStatus.AWAITING_REVIEW:
+            raise ValueError(
+                "Only a preparation awaiting review can complete after review."
+            )
+
+        if self.agent_engine_thread_id is None:
+            raise ValueError(
+                "A preparation awaiting review must have an Agent Engine thread."
+            )
+
+        self.status = ApplicationPreparationStatus.COMPLETED
+        self.error_message = None
+        self.updated_at = at or datetime.now(UTC)
+
     def mark_failed(
         self,
         *,

@@ -152,3 +152,43 @@ def test_completed_preparation_cannot_be_marked_failed() -> None:
         match="Preparation result can only be recorded after starting",
     ):
         preparation.mark_failed(error_message="Late failure.")
+
+
+def test_awaiting_review_preparation_can_complete_after_review() -> None:
+    """A successful human review should complete the preparation."""
+
+    preparation = ApplicationPreparation.create(
+        application_id=uuid4(),
+        user_id="USER-123",
+    )
+    preparation.mark_starting()
+    preparation.mark_awaiting_review(
+        thread_id="THR-REVIEW-001",
+    )
+
+    at = datetime(2026, 8, 25, 21, 0, tzinfo=UTC)
+
+    preparation.mark_completed_after_review(
+        at=at,
+    )
+
+    assert preparation.status is ApplicationPreparationStatus.COMPLETED
+    assert preparation.agent_engine_thread_id == "THR-REVIEW-001"
+    assert preparation.error_message is None
+    assert preparation.updated_at == at
+
+
+def test_non_review_preparation_cannot_complete_after_review() -> None:
+    """Only an analysis paused for review may use the review transition."""
+
+    preparation = ApplicationPreparation.create(
+        application_id=uuid4(),
+        user_id="USER-123",
+    )
+    preparation.mark_starting()
+
+    with pytest.raises(
+        ValueError,
+        match="awaiting review can complete after review",
+    ):
+        preparation.mark_completed_after_review()

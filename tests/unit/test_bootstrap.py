@@ -5,6 +5,9 @@ from pydantic import AnyHttpUrl, SecretStr
 from careerops_automation_mcp_hub.application.services.prepare_application import (
     PrepareApplicationService,
 )
+from careerops_automation_mcp_hub.application.services.review_application import (
+    ReviewApplicationService,
+)
 from careerops_automation_mcp_hub.bootstrap import create_runtime
 from careerops_automation_mcp_hub.core.config import Settings
 from careerops_automation_mcp_hub.infrastructure.agent_engine.http_client import (
@@ -40,6 +43,11 @@ async def test_runtime_owns_agent_engine_http_client_lifecycle() -> None:
     assert isinstance(
         runtime.prepare_application_service,
         PrepareApplicationService,
+    )
+
+    assert isinstance(
+        runtime.review_application_service,
+        ReviewApplicationService,
     )
 
 

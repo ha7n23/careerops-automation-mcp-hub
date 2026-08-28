@@ -23,6 +23,7 @@ from careerops_automation_mcp_hub.domain.application_preparation import (
 )
 from careerops_automation_mcp_hub.domain.application_review import (
     ApplicationReviewSubmission,
+    ApplicationReviewSubmissionStatus,
 )
 from careerops_automation_mcp_hub.domain.job_application import JobApplication
 from careerops_automation_mcp_hub.infrastructure.database.mappers import (
@@ -187,6 +188,29 @@ class SqlAlchemyApplicationPreparationRepository:
 
         return application_preparation_from_record(record)
 
+    async def get_for_application_for_update(
+        self,
+        *,
+        user_id: str,
+        application_id: UUID,
+    ) -> ApplicationPreparation | None:
+        statement = (
+            select(ApplicationPreparationRecord)
+            .where(
+                ApplicationPreparationRecord.user_id == user_id,
+                ApplicationPreparationRecord.application_id == application_id,
+            )
+            .with_for_update()
+        )
+
+        result = await self._session.execute(statement)
+        record = result.scalar_one_or_none()
+
+        if record is None:
+            return None
+
+        return application_preparation_from_record(record)
+
     async def save(
         self,
         preparation: ApplicationPreparation,
@@ -234,6 +258,40 @@ class SqlAlchemyApplicationReviewSubmissionRepository:
         statement = select(ApplicationReviewSubmissionRecord).where(
             ApplicationReviewSubmissionRecord.user_id == user_id,
             ApplicationReviewSubmissionRecord.idempotency_key == idempotency_key,
+        )
+
+        result = await self._session.execute(statement)
+        record = result.scalar_one_or_none()
+
+        if record is None:
+            return None
+
+        return application_review_submission_from_record(record)
+
+    async def get_unresolved_for_preparation(
+        self,
+        *,
+        user_id: str,
+        preparation_id: UUID,
+    ) -> ApplicationReviewSubmission | None:
+        unresolved_statuses = (
+            ApplicationReviewSubmissionStatus.PENDING.value,
+            ApplicationReviewSubmissionStatus.SUBMITTING.value,
+            ApplicationReviewSubmissionStatus.OUTCOME_UNKNOWN.value,
+        )
+
+        statement = (
+            select(ApplicationReviewSubmissionRecord)
+            .where(
+                ApplicationReviewSubmissionRecord.user_id == user_id,
+                ApplicationReviewSubmissionRecord.preparation_id == preparation_id,
+                ApplicationReviewSubmissionRecord.status.in_(unresolved_statuses),
+            )
+            .order_by(
+                ApplicationReviewSubmissionRecord.created_at,
+                ApplicationReviewSubmissionRecord.review_submission_id,
+            )
+            .limit(1)
         )
 
         result = await self._session.execute(statement)

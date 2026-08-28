@@ -64,3 +64,41 @@ async def test_review_repository_saves_execution_state() -> None:
 
     assert stored is not None
     assert stored.status is ApplicationReviewSubmissionStatus.SUBMITTING
+
+
+@pytest.mark.anyio
+async def test_review_repository_tracks_only_unresolved_submissions() -> None:
+    repository = InMemoryApplicationReviewSubmissionRepository()
+
+    preparation_id = uuid4()
+
+    submission = ApplicationReviewSubmission.create(
+        preparation_id=preparation_id,
+        application_id=uuid4(),
+        user_id="USER-001",
+        thread_id="THR-001",
+        idempotency_key="review-unresolved-001",
+        action=ApplicationReviewAction.APPROVE,
+    )
+
+    await repository.add(submission)
+
+    unresolved = await repository.get_unresolved_for_preparation(
+        user_id="USER-001",
+        preparation_id=preparation_id,
+    )
+
+    assert unresolved is submission
+
+    submission.mark_submitting()
+    submission.mark_failed(
+        error_message="Agent Engine rejected the review.",
+    )
+    await repository.save(submission)
+
+    unresolved_after_failure = await repository.get_unresolved_for_preparation(
+        user_id="USER-001",
+        preparation_id=preparation_id,
+    )
+
+    assert unresolved_after_failure is None

@@ -13,6 +13,9 @@ from careerops_automation_mcp_hub.application.agent_engine import (
 from careerops_automation_mcp_hub.application.services.prepare_application import (
     PrepareApplicationService,
 )
+from careerops_automation_mcp_hub.application.services.review_application import (
+    ReviewApplicationService,
+)
 from careerops_automation_mcp_hub.domain.action_item import (
     ActionItem,
     ActionItemType,
@@ -82,9 +85,16 @@ async def mcp_client():
         actions=actions,
     )
 
+    agent_engine_client = _MCPAgentEngineClient()
+
     prepare_application_service = PrepareApplicationService(
         unit_of_work_factory,
-        _MCPAgentEngineClient(),
+        agent_engine_client,
+    )
+
+    review_application_service = ReviewApplicationService(
+        unit_of_work_factory,
+        agent_engine_client,
     )
 
     server = build_mcp_server(
@@ -96,6 +106,7 @@ async def mcp_client():
         ),
         unit_of_work_factory=unit_of_work_factory,
         prepare_application_service=prepare_application_service,
+        review_application_service=review_application_service,
     )
 
     async with Client(server, raise_exceptions=True) as client:

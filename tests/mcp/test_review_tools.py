@@ -27,9 +27,11 @@ from careerops_automation_mcp_hub.mcp.principal import (
 from careerops_automation_mcp_hub.mcp.server import build_mcp_server
 
 
-class _FakeAgentEngineClient:
+class _ReviewMCPAgentEngineClient:
     def __init__(self) -> None:
-        self.call_count = 0
+        self.analysis_call_count = 0
+        self.review_call_count = 0
+        self.job_id: str | None = None
 
     async def analyse_job(
         self,
@@ -38,21 +40,22 @@ class _FakeAgentEngineClient:
         job_id: str,
         job_description: str,
     ) -> AgentEngineJobAnalysis:
-        self.call_count += 1
+        self.analysis_call_count += 1
+        self.job_id = job_id
 
         return AgentEngineJobAnalysis(
-            status=AgentEngineAnalysisStatus.COMPLETED,
-            thread_id="THR-MCP-PREPARE",
+            status=AgentEngineAnalysisStatus.AWAITING_REVIEW,
+            thread_id="THR-MCP-REVIEW",
             job_id=job_id,
             role_title="Junior AI Engineer",
-            fit_score=0.82,
+            fit_score=0.84,
             requirements=(),
             evidence_matches=(),
             cv_proposals=(),
-            reviewable_proposal_ids=(),
+            reviewable_proposal_ids=("CVP-001",),
             blocked_proposal_ids=(),
             allowed_review_actions=(),
-            review_status=None,
+            review_status="pending",
         )
 
     async def review_job_analysis(
@@ -62,7 +65,25 @@ class _FakeAgentEngineClient:
         thread_id: str,
         decision: AgentEngineReviewDecision,
     ) -> AgentEngineJobAnalysis:
-        raise AssertionError("Review is not expected in preparation MCP tests.")
+        self.review_call_count += 1
+
+        if self.job_id is None:
+            raise AssertionError("Preparation must run before review.")
+
+        return AgentEngineJobAnalysis(
+            status=AgentEngineAnalysisStatus.COMPLETED,
+            thread_id=thread_id,
+            job_id=self.job_id,
+            role_title="Junior AI Engineer",
+            fit_score=0.84,
+            requirements=(),
+            evidence_matches=(),
+            cv_proposals=(),
+            reviewable_proposal_ids=(),
+            blocked_proposal_ids=(),
+            allowed_review_actions=(),
+            review_status="approved",
+        )
 
 
 @pytest.fixture
@@ -71,7 +92,7 @@ def anyio_backend() -> str:
 
 
 @pytest.fixture
-async def preparation_mcp_client():
+async def review_mcp_client():
     applications = InMemoryJobApplicationRepository()
     events = InMemoryApplicationEventRepository()
     actions = InMemoryActionItemRepository()
@@ -82,7 +103,7 @@ async def preparation_mcp_client():
         actions=actions,
     )
 
-    agent_engine_client = _FakeAgentEngineClient()
+    agent_engine_client = _ReviewMCPAgentEngineClient()
 
     prepare_service = PrepareApplicationService(
         unit_of_work_factory,
@@ -106,82 +127,117 @@ async def preparation_mcp_client():
         review_application_service=review_service,
     )
 
-    async with Client(server, raise_exceptions=True) as client:
+    async with Client(
+        server,
+        raise_exceptions=True,
+    ) as client:
         yield client, agent_engine_client
 
 
 @pytest.mark.anyio
-async def test_prepare_application_returns_structured_analysis(
-    preparation_mcp_client,
+async def test_review_application_returns_structured_completion(
+    review_mcp_client,
 ) -> None:
-    client, agent_engine_client = preparation_mcp_client
+    client, agent_engine_client = review_mcp_client
 
     created = await client.call_tool(
         "create_application",
         {
             "company_name": "Monzo",
             "role_title": "Junior AI Engineer",
-            "idempotency_key": "prepare-create-1",
+            "idempotency_key": "review-create-001",
         },
     )
 
     assert created.structured_content is not None
+
     application_id = created.structured_content["application_id"]
 
-    result = await client.call_tool(
+    prepared = await client.call_tool(
         "prepare_application",
         {
             "application_id": application_id,
-            "job_description": "Strong Python skills are essential.",
+            "job_description": ("Strong Python engineering skills are essential."),
         },
     )
 
-    assert result.is_error is False
-    assert result.structured_content is not None
+    assert prepared.is_error is False
+    assert prepared.structured_content is not None
+    assert prepared.structured_content["preparation"]["status"] == "awaiting_review"
 
-    content = result.structured_content
+    reviewed = await client.call_tool(
+        "review_application",
+        {
+            "application_id": application_id,
+            "idempotency_key": "review-submit-001",
+            "action": "approve",
+            "approved_proposal_ids": ["CVP-001"],
+        },
+    )
 
-    assert content["started_new_analysis"] is True
+    assert reviewed.is_error is False
+    assert reviewed.structured_content is not None
+
+    content = reviewed.structured_content
+
+    assert content["started_new_review"] is True
     assert content["application"]["status"] == "ready_to_apply"
     assert content["preparation"]["status"] == "completed"
+
+    assert content["submission"]["status"] == "completed"
+    assert content["submission"]["outcome"] == "completed"
+    assert content["submission"]["action"] == "approve"
 
     assert content["analysis"] is not None
     assert content["analysis"]["status"] == "completed"
     assert content["analysis"]["job_id"] == application_id
-    assert content["analysis"]["thread_id"] == "THR-MCP-PREPARE"
-    assert content["analysis"]["fit_score"] == 0.82
+    assert content["analysis"]["thread_id"] == "THR-MCP-REVIEW"
 
-    assert agent_engine_client.call_count == 1
+    assert agent_engine_client.analysis_call_count == 1
+    assert agent_engine_client.review_call_count == 1
 
 
 @pytest.mark.anyio
-async def test_prepare_application_replay_does_not_start_second_analysis(
-    preparation_mcp_client,
+async def test_review_application_replay_does_not_resubmit(
+    review_mcp_client,
 ) -> None:
-    client, agent_engine_client = preparation_mcp_client
+    client, agent_engine_client = review_mcp_client
 
     created = await client.call_tool(
         "create_application",
         {
             "company_name": "Monzo",
             "role_title": "Junior AI Engineer",
-            "idempotency_key": "prepare-replay-create-1",
+            "idempotency_key": "review-replay-create-001",
         },
     )
 
     assert created.structured_content is not None
 
+    application_id = created.structured_content["application_id"]
+
+    await client.call_tool(
+        "prepare_application",
+        {
+            "application_id": application_id,
+            "job_description": ("Strong Python engineering skills are essential."),
+        },
+    )
+
     arguments = {
-        "application_id": created.structured_content["application_id"],
-        "job_description": "Strong Python skills are essential.",
+        "application_id": application_id,
+        "idempotency_key": "review-replay-001",
+        "action": "approve",
+        "approved_proposal_ids": ["CVP-001"],
     }
 
     first = await client.call_tool(
-        "prepare_application",
+        "review_application",
         arguments,
     )
+
     replay = await client.call_tool(
-        "prepare_application",
+        "review_application",
         arguments,
     )
 
@@ -189,8 +245,11 @@ async def test_prepare_application_replay_does_not_start_second_analysis(
     assert replay.is_error is False
     assert replay.structured_content is not None
 
-    assert replay.structured_content["started_new_analysis"] is False
-    assert replay.structured_content["preparation"]["status"] == "completed"
+    assert replay.structured_content["started_new_review"] is False
+
+    assert replay.structured_content["submission"]["status"] == "completed"
+
     assert replay.structured_content["analysis"] is None
 
-    assert agent_engine_client.call_count == 1
+    assert agent_engine_client.analysis_call_count == 1
+    assert agent_engine_client.review_call_count == 1

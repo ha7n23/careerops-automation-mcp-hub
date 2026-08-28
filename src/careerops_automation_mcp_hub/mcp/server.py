@@ -29,6 +29,10 @@ from careerops_automation_mcp_hub.application.services.prepare_application impor
     PrepareApplicationCommand,
     PrepareApplicationService,
 )
+from careerops_automation_mcp_hub.application.services.review_application import (
+    ReviewApplicationCommand,
+    ReviewApplicationService,
+)
 from careerops_automation_mcp_hub.application.services.update_application_status import (
     UpdateApplicationStatusCommand,
     UpdateApplicationStatusService,
@@ -36,13 +40,19 @@ from careerops_automation_mcp_hub.application.services.update_application_status
 from careerops_automation_mcp_hub.domain.application_lifecycle import (
     ApplicationStatus,
 )
+from careerops_automation_mcp_hub.domain.application_review import (
+    ApplicationReviewAction,
+    ApplicationReviewEdit,
+)
 from careerops_automation_mcp_hub.mcp.principal import PrincipalProvider
 from careerops_automation_mcp_hub.mcp.schemas import (
     ActionItemSummary,
     ApplicationListResult,
+    ApplicationReviewEditInput,
     ApplicationSummary,
     PendingActionsResult,
     PrepareApplicationToolResult,
+    ReviewApplicationToolResult,
 )
 
 
@@ -51,6 +61,7 @@ def build_mcp_server(
     principal_provider: PrincipalProvider,
     unit_of_work_factory: ApplicationUnitOfWorkFactory,
     prepare_application_service: PrepareApplicationService,
+    review_application_service: ReviewApplicationService,
     token_verifier: TokenVerifier | None = None,
     auth: AuthSettings | None = None,
 ) -> MCPServer:
@@ -134,6 +145,59 @@ def build_mcp_server(
         )
 
         return PrepareApplicationToolResult.from_application_result(result)
+
+    @mcp.tool(
+        annotations=ToolAnnotations(
+            read_only_hint=False,
+            destructive_hint=False,
+            idempotent_hint=True,
+            open_world_hint=False,
+        )
+    )
+    async def review_application(
+        application_id: UUID,
+        idempotency_key: str,
+        action: ApplicationReviewAction,
+        approved_proposal_ids: list[str] | None = None,
+        rejected_proposal_ids: list[str] | None = None,
+        edits: list[ApplicationReviewEditInput] | None = None,
+        reviewer_comment: str | None = None,
+    ) -> ReviewApplicationToolResult:
+        """Apply an explicit human decision to a prepared application.
+
+        This acts on CareerOps' internal CV-review workflow only. It does
+        not submit an application to an employer or external job portal.
+
+        The caller must supply a new idempotency key for each intentional
+        review round. Ambiguous remote outcomes are durably blocked from
+        blind resubmission.
+        """
+
+        principal = principal_provider.get_principal()
+
+        domain_edits = tuple(
+            ApplicationReviewEdit(
+                proposal_id=edit.proposal_id,
+                edited_text=edit.edited_text,
+            )
+            for edit in (edits or [])
+        )
+
+        result = await review_application_service.execute(
+            ReviewApplicationCommand(
+                user_id=principal.user_id,
+                application_id=application_id,
+                actor_id=principal.actor_id,
+                idempotency_key=idempotency_key,
+                action=action,
+                approved_proposal_ids=tuple(approved_proposal_ids or []),
+                rejected_proposal_ids=tuple(rejected_proposal_ids or []),
+                edits=domain_edits,
+                reviewer_comment=reviewer_comment,
+            )
+        )
+
+        return ReviewApplicationToolResult.from_application_result(result)
 
     @mcp.tool(
         annotations=ToolAnnotations(

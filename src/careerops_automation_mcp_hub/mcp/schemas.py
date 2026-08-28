@@ -14,6 +14,9 @@ from careerops_automation_mcp_hub.application.agent_engine import (
 from careerops_automation_mcp_hub.application.services.prepare_application import (
     PrepareApplicationResult,
 )
+from careerops_automation_mcp_hub.application.services.review_application import (
+    ReviewApplicationResult,
+)
 from careerops_automation_mcp_hub.domain.action_item import (
     ActionItem,
     ActionItemStatus,
@@ -25,6 +28,13 @@ from careerops_automation_mcp_hub.domain.application_lifecycle import (
 from careerops_automation_mcp_hub.domain.application_preparation import (
     ApplicationPreparation,
     ApplicationPreparationStatus,
+)
+from careerops_automation_mcp_hub.domain.application_review import (
+    ApplicationReviewAction,
+    ApplicationReviewEdit,
+    ApplicationReviewOutcome,
+    ApplicationReviewSubmission,
+    ApplicationReviewSubmissionStatus,
 )
 from careerops_automation_mcp_hub.domain.job_application import JobApplication
 
@@ -236,4 +246,100 @@ class PrepareApplicationToolResult(BaseModel):
             preparation=ApplicationPreparationSummary.from_domain(result.preparation),
             analysis=analysis,
             started_new_analysis=result.started_new_analysis,
+        )
+
+
+class ApplicationReviewEditInput(BaseModel):
+    proposal_id: str
+    edited_text: str
+
+
+class ApplicationReviewEditSummary(BaseModel):
+    proposal_id: str
+    edited_text: str
+
+    @classmethod
+    def from_domain(
+        cls,
+        edit: ApplicationReviewEdit,
+    ) -> "ApplicationReviewEditSummary":
+        return cls(
+            proposal_id=edit.proposal_id,
+            edited_text=edit.edited_text,
+        )
+
+
+class ApplicationReviewSubmissionSummary(BaseModel):
+    review_submission_id: UUID
+    preparation_id: UUID
+    application_id: UUID
+    thread_id: str
+    idempotency_key: str
+
+    action: ApplicationReviewAction
+    approved_proposal_ids: list[str]
+    rejected_proposal_ids: list[str]
+    edits: list[ApplicationReviewEditSummary]
+    reviewer_comment: str | None
+
+    status: ApplicationReviewSubmissionStatus
+    outcome: ApplicationReviewOutcome | None
+    error_message: str | None
+
+    created_at: datetime
+    updated_at: datetime
+
+    @classmethod
+    def from_domain(
+        cls,
+        submission: ApplicationReviewSubmission,
+    ) -> "ApplicationReviewSubmissionSummary":
+        return cls(
+            review_submission_id=submission.review_submission_id,
+            preparation_id=submission.preparation_id,
+            application_id=submission.application_id,
+            thread_id=submission.thread_id,
+            idempotency_key=submission.idempotency_key,
+            action=submission.action,
+            approved_proposal_ids=list(submission.approved_proposal_ids),
+            rejected_proposal_ids=list(submission.rejected_proposal_ids),
+            edits=[
+                ApplicationReviewEditSummary.from_domain(edit)
+                for edit in submission.edits
+            ],
+            reviewer_comment=submission.reviewer_comment,
+            status=submission.status,
+            outcome=submission.outcome,
+            error_message=submission.error_message,
+            created_at=submission.created_at,
+            updated_at=submission.updated_at,
+        )
+
+
+class ReviewApplicationToolResult(BaseModel):
+    application: ApplicationSummary
+    preparation: ApplicationPreparationSummary
+    submission: ApplicationReviewSubmissionSummary
+    analysis: AgentEngineAnalysisSummary | None
+    started_new_review: bool
+
+    @classmethod
+    def from_application_result(
+        cls,
+        result: ReviewApplicationResult,
+    ) -> "ReviewApplicationToolResult":
+        analysis = (
+            AgentEngineAnalysisSummary.from_domain(result.analysis)
+            if result.analysis is not None
+            else None
+        )
+
+        return cls(
+            application=ApplicationSummary.from_domain(result.application),
+            preparation=ApplicationPreparationSummary.from_domain(result.preparation),
+            submission=ApplicationReviewSubmissionSummary.from_domain(
+                result.submission
+            ),
+            analysis=analysis,
+            started_new_review=result.started_new_review,
         )

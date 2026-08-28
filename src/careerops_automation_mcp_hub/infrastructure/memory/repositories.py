@@ -22,6 +22,7 @@ from careerops_automation_mcp_hub.domain.application_preparation import (
 )
 from careerops_automation_mcp_hub.domain.application_review import (
     ApplicationReviewSubmission,
+    ApplicationReviewSubmissionStatus,
 )
 from careerops_automation_mcp_hub.domain.job_application import (
     JobApplication,
@@ -239,6 +240,17 @@ class InMemoryApplicationPreparationRepository:
 
         return None
 
+    async def get_for_application_for_update(
+        self,
+        *,
+        user_id: str,
+        application_id: UUID,
+    ) -> ApplicationPreparation | None:
+        return await self.get_for_application(
+            user_id=user_id,
+            application_id=application_id,
+        )
+
     async def save(
         self,
         preparation: ApplicationPreparation,
@@ -269,6 +281,28 @@ class InMemoryApplicationReviewSubmissionRepository:
             if (
                 submission.user_id == user_id
                 and submission.idempotency_key == idempotency_key
+            ):
+                return submission
+
+        return None
+
+    async def get_unresolved_for_preparation(
+        self,
+        *,
+        user_id: str,
+        preparation_id: UUID,
+    ) -> ApplicationReviewSubmission | None:
+        unresolved_statuses = {
+            ApplicationReviewSubmissionStatus.PENDING,
+            ApplicationReviewSubmissionStatus.SUBMITTING,
+            ApplicationReviewSubmissionStatus.OUTCOME_UNKNOWN,
+        }
+
+        for submission in self._submissions.values():
+            if (
+                submission.user_id == user_id
+                and submission.preparation_id == preparation_id
+                and submission.status in unresolved_statuses
             ):
                 return submission
 

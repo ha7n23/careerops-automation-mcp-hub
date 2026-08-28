@@ -80,6 +80,14 @@ class ApplicationPreparationRepository(Protocol):
     ) -> ApplicationPreparation | None:
         """Return the preparation workflow for one user-scoped application."""
 
+    async def get_for_application_for_update(
+        self,
+        *,
+        user_id: str,
+        application_id: UUID,
+    ) -> ApplicationPreparation | None:
+        """Lock and return one preparation for orchestration."""
+
     async def save(
         self,
         preparation: ApplicationPreparation,
@@ -101,6 +109,14 @@ class ApplicationReviewSubmissionRepository(Protocol):
         idempotency_key: str,
     ) -> ApplicationReviewSubmission | None:
         """Return one user-scoped review submission."""
+
+    async def get_unresolved_for_preparation(
+        self,
+        *,
+        user_id: str,
+        preparation_id: UUID,
+    ) -> ApplicationReviewSubmission | None:
+        """Return an unresolved review that blocks another submission."""
 
     async def save(
         self,

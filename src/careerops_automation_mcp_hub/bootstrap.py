@@ -10,6 +10,9 @@ from sqlalchemy.ext.asyncio import AsyncEngine
 from careerops_automation_mcp_hub.application.services.prepare_application import (
     PrepareApplicationService,
 )
+from careerops_automation_mcp_hub.application.services.review_application import (
+    ReviewApplicationService,
+)
 from careerops_automation_mcp_hub.core.config import Settings, get_settings
 from careerops_automation_mcp_hub.infrastructure.agent_engine.http_client import (
     HttpAgentEngineClient,
@@ -42,6 +45,7 @@ class CareerOpsRuntime:
     agent_engine_http_client: httpx.AsyncClient
     agent_engine_client: HttpAgentEngineClient
     prepare_application_service: PrepareApplicationService
+    review_application_service: ReviewApplicationService
 
     def build_mcp_server_for_principal(
         self,
@@ -91,6 +95,7 @@ class CareerOpsRuntime:
             principal_provider=principal_provider,
             unit_of_work_factory=self.unit_of_work_factory,
             prepare_application_service=self.prepare_application_service,
+            review_application_service=self.review_application_service,
             token_verifier=token_verifier,
             auth=auth,
         )
@@ -141,6 +146,11 @@ def create_runtime(
         agent_engine_client,
     )
 
+    review_application_service = ReviewApplicationService(
+        unit_of_work_factory,
+        agent_engine_client,
+    )
+
     return CareerOpsRuntime(
         settings=resolved_settings,
         engine=engine,
@@ -148,4 +158,5 @@ def create_runtime(
         agent_engine_http_client=agent_engine_http_client,
         agent_engine_client=agent_engine_client,
         prepare_application_service=prepare_application_service,
+        review_application_service=review_application_service,
     )
