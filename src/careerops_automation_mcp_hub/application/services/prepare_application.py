@@ -91,7 +91,7 @@ class PrepareApplicationService:
             started_at=started_at,
         )
 
-        if initial.preparation.status is not ApplicationPreparationStatus.STARTING:
+        if not initial.started_new_analysis:
             return initial
 
         try:

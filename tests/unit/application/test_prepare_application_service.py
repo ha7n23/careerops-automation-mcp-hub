@@ -425,3 +425,41 @@ async def test_prepare_application_is_user_scoped() -> None:
         )
 
     assert client.calls == []
+
+
+@pytest.mark.anyio
+async def test_existing_starting_preparation_does_not_start_second_analysis() -> None:
+    application = _build_application()
+    application.transition_to(ApplicationStatus.PREPARING)
+
+    client = _FakeAgentEngineClient()
+
+    service, applications, _, unit_of_work_factory = _build_service(client=client)
+
+    await applications.add(application)
+
+    preparation = ApplicationPreparation.create(
+        application_id=application.application_id,
+        user_id=application.user_id,
+    )
+    preparation.mark_starting()
+
+    async with unit_of_work_factory() as unit_of_work:
+        await unit_of_work.preparations.add(preparation)
+        await unit_of_work.commit()
+
+    result = await service.execute(
+        PrepareApplicationCommand(
+            user_id=application.user_id,
+            application_id=application.application_id,
+            job_description="Strong Python skills are essential.",
+            actor_id=application.user_id,
+        )
+    )
+
+    assert result.started_new_analysis is False
+    assert result.analysis is None
+
+    assert result.preparation.status is ApplicationPreparationStatus.STARTING
+
+    assert client.calls == []
