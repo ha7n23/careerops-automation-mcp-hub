@@ -11,6 +11,9 @@ from careerops_automation_mcp_hub.application.agent_engine import (
     AgentEngineRequirement,
     AgentEngineReviewAction,
 )
+from careerops_automation_mcp_hub.application.services.get_application_analysis import (
+    GetApplicationAnalysisResult,
+)
 from careerops_automation_mcp_hub.application.services.prepare_application import (
     PrepareApplicationResult,
 )
@@ -246,6 +249,23 @@ class PrepareApplicationToolResult(BaseModel):
             preparation=ApplicationPreparationSummary.from_domain(result.preparation),
             analysis=analysis,
             started_new_analysis=result.started_new_analysis,
+        )
+
+
+class GetApplicationAnalysisToolResult(BaseModel):
+    application: ApplicationSummary
+    preparation: ApplicationPreparationSummary
+    analysis: AgentEngineAnalysisSummary
+
+    @classmethod
+    def from_application_result(
+        cls,
+        result: GetApplicationAnalysisResult,
+    ) -> "GetApplicationAnalysisToolResult":
+        return cls(
+            application=ApplicationSummary.from_domain(result.application),
+            preparation=ApplicationPreparationSummary.from_domain(result.preparation),
+            analysis=AgentEngineAnalysisSummary.from_domain(result.analysis),
         )
 
 

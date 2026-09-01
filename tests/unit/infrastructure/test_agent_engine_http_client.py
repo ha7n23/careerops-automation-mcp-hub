@@ -333,3 +333,74 @@ async def test_transport_failure_maps_to_unavailable() -> None:
                 job_id="JOB-001",
                 job_description="Strong Python required.",
             )
+
+
+@pytest.mark.anyio
+async def test_get_job_analysis_recovers_awaiting_review_response() -> None:
+    def handler(
+        request: httpx.Request,
+    ) -> httpx.Response:
+        assert request.method == "GET"
+        assert request.url.path == "/api/v1/job-analysis/THR-001"
+        assert request.headers["X-CareerOps-Service-Key"] == "test-service-key"
+        assert request.headers["X-User-ID"] == "USER-001"
+
+        return httpx.Response(
+            200,
+            json=_awaiting_review_payload(),
+        )
+
+    transport = httpx.MockTransport(handler)
+
+    async with httpx.AsyncClient(
+        base_url="http://agent-engine.test",
+        transport=transport,
+    ) as http_client:
+        client = HttpAgentEngineClient(
+            http_client,
+            service_key="test-service-key",
+        )
+
+        result = await client.get_job_analysis(
+            user_id="USER-001",
+            thread_id="THR-001",
+        )
+
+    assert result.status is AgentEngineAnalysisStatus.AWAITING_REVIEW
+    assert result.thread_id == "THR-001"
+    assert result.job_id == "JOB-001"
+    assert result.cv_proposals[0].proposal_id == "CVP-001"
+    assert result.allowed_review_actions == (
+        AgentEngineReviewAction.APPROVE,
+        AgentEngineReviewAction.REJECT,
+    )
+
+
+@pytest.mark.anyio
+async def test_get_job_analysis_maps_missing_analysis() -> None:
+    def handler(
+        request: httpx.Request,
+    ) -> httpx.Response:
+        assert request.method == "GET"
+
+        return httpx.Response(
+            404,
+            json={"detail": "Job-analysis thread is unavailable."},
+        )
+
+    transport = httpx.MockTransport(handler)
+
+    async with httpx.AsyncClient(
+        base_url="http://agent-engine.test",
+        transport=transport,
+    ) as http_client:
+        client = HttpAgentEngineClient(
+            http_client,
+            service_key="test-service-key",
+        )
+
+        with pytest.raises(AgentEngineAnalysisNotFoundError):
+            await client.get_job_analysis(
+                user_id="USER-001",
+                thread_id="THR-MISSING",
+            )

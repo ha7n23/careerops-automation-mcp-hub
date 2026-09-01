@@ -19,6 +19,15 @@ class AgentEngineClient(Protocol):
         """Start an evidence-grounded job analysis."""
         ...
 
+    async def get_job_analysis(
+        self,
+        *,
+        user_id: str,
+        thread_id: str,
+    ) -> AgentEngineJobAnalysis:
+        """Recover the current durable state of one job analysis."""
+        ...
+
     async def review_job_analysis(
         self,
         *,

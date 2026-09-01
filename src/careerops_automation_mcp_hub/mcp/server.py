@@ -17,6 +17,10 @@ from careerops_automation_mcp_hub.application.services.get_application import (
     GetApplicationQuery,
     GetApplicationService,
 )
+from careerops_automation_mcp_hub.application.services.get_application_analysis import (
+    GetApplicationAnalysisQuery,
+    GetApplicationAnalysisService,
+)
 from careerops_automation_mcp_hub.application.services.get_pending_actions import (
     GetPendingActionsQuery,
     GetPendingActionsService,
@@ -50,6 +54,7 @@ from careerops_automation_mcp_hub.mcp.schemas import (
     ApplicationListResult,
     ApplicationReviewEditInput,
     ApplicationSummary,
+    GetApplicationAnalysisToolResult,
     PendingActionsResult,
     PrepareApplicationToolResult,
     ReviewApplicationToolResult,
@@ -62,6 +67,7 @@ def build_mcp_server(
     unit_of_work_factory: ApplicationUnitOfWorkFactory,
     prepare_application_service: PrepareApplicationService,
     review_application_service: ReviewApplicationService,
+    get_application_analysis_service: GetApplicationAnalysisService,
     token_verifier: TokenVerifier | None = None,
     auth: AuthSettings | None = None,
 ) -> MCPServer:
@@ -145,6 +151,32 @@ def build_mcp_server(
         )
 
         return PrepareApplicationToolResult.from_application_result(result)
+
+    @mcp.tool(
+        annotations=ToolAnnotations(
+            read_only_hint=True,
+            open_world_hint=False,
+        )
+    )
+    async def get_application_analysis(
+        application_id: UUID,
+    ) -> GetApplicationAnalysisToolResult:
+        """Recover the current durable AI analysis for a CareerOps application.
+
+        This is a read-only reconciliation operation. It does not start,
+        retry, resume, or otherwise mutate the Agent Engine workflow.
+        """
+
+        principal = principal_provider.get_principal()
+
+        result = await get_application_analysis_service.execute(
+            GetApplicationAnalysisQuery(
+                user_id=principal.user_id,
+                application_id=application_id,
+            )
+        )
+
+        return GetApplicationAnalysisToolResult.from_application_result(result)
 
     @mcp.tool(
         annotations=ToolAnnotations(

@@ -46,3 +46,12 @@ class AgentEngineRequestError(AgentEngineError):
 
 class ApplicationReviewBlockedError(RuntimeError):
     """Raised when another unresolved review makes a new submission unsafe."""
+
+
+class ApplicationAnalysisUnavailableError(LookupError):
+    """Raised when an application has no recoverable Agent Engine analysis."""
+
+    def __init__(self, application_id: UUID) -> None:
+        super().__init__(
+            f"Application {application_id} does not have a recoverable analysis."
+        )

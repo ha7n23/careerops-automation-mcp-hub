@@ -6,6 +6,9 @@ from careerops_automation_mcp_hub.application.agent_engine import (
     AgentEngineJobAnalysis,
     AgentEngineReviewDecision,
 )
+from careerops_automation_mcp_hub.application.services.get_application_analysis import (
+    GetApplicationAnalysisService,
+)
 from careerops_automation_mcp_hub.application.services.prepare_application import (
     PrepareApplicationService,
 )
@@ -55,6 +58,16 @@ class _FakeAgentEngineClient:
             review_status=None,
         )
 
+    async def get_job_analysis(
+        self,
+        *,
+        user_id: str,
+        thread_id: str,
+    ) -> AgentEngineJobAnalysis:
+        raise AssertionError(
+            "Analysis recovery is not expected in application MCP tests."
+        )
+
     async def review_job_analysis(
         self,
         *,
@@ -89,6 +102,11 @@ async def preparation_mcp_client():
         agent_engine_client,
     )
 
+    get_application_analysis_service = GetApplicationAnalysisService(
+        unit_of_work_factory,
+        agent_engine_client,
+    )
+
     review_service = ReviewApplicationService(
         unit_of_work_factory,
         agent_engine_client,
@@ -104,6 +122,7 @@ async def preparation_mcp_client():
         unit_of_work_factory=unit_of_work_factory,
         prepare_application_service=prepare_service,
         review_application_service=review_service,
+        get_application_analysis_service=get_application_analysis_service,
     )
 
     async with Client(server, raise_exceptions=True) as client:

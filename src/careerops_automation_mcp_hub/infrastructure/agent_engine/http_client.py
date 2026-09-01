@@ -131,6 +131,24 @@ class HttpAgentEngineClient:
             },
         )
 
+    async def get_job_analysis(
+        self,
+        *,
+        user_id: str,
+        thread_id: str,
+    ) -> AgentEngineJobAnalysis:
+        """Recover one durable Module 1 job analysis."""
+
+        encoded_thread_id = quote(
+            thread_id,
+            safe="",
+        )
+
+        return await self._get_job_analysis(
+            path=f"/api/v1/job-analysis/{encoded_thread_id}",
+            user_id=user_id,
+        )
+
     async def review_job_analysis(
         self,
         *,
@@ -149,6 +167,32 @@ class HttpAgentEngineClient:
             user_id=user_id,
             json_payload=_build_review_payload(decision),
         )
+
+    async def _get_job_analysis(
+        self,
+        *,
+        path: str,
+        user_id: str,
+    ) -> AgentEngineJobAnalysis:
+        try:
+            response = await self._client.get(
+                path,
+                headers={
+                    "X-CareerOps-Service-Key": self._service_key,
+                    "X-User-ID": user_id,
+                },
+            )
+        except httpx.TimeoutException as exc:
+            raise AgentEngineUnavailableError(
+                "Agent Engine request timed out."
+            ) from exc
+        except httpx.RequestError as exc:
+            raise AgentEngineUnavailableError("Agent Engine is unavailable.") from exc
+
+        if not response.is_success:
+            _raise_for_agent_engine_error(response)
+
+        return _parse_job_analysis_response(response)
 
     async def _post_job_analysis(
         self,
@@ -176,21 +220,25 @@ class HttpAgentEngineClient:
         if not response.is_success:
             _raise_for_agent_engine_error(response)
 
-        try:
-            raw_payload = response.json()
-        except ValueError as exc:
-            raise AgentEngineContractError(
-                "Agent Engine returned invalid JSON."
-            ) from exc
+        return _parse_job_analysis_response(response)
 
-        try:
-            payload = _RESPONSE_ADAPTER.validate_python(raw_payload)
-        except ValidationError as exc:
-            raise AgentEngineContractError(
-                "Agent Engine response did not match the expected contract."
-            ) from exc
 
-        return _map_job_analysis(payload)
+def _parse_job_analysis_response(
+    response: httpx.Response,
+) -> AgentEngineJobAnalysis:
+    try:
+        raw_payload = response.json()
+    except ValueError as exc:
+        raise AgentEngineContractError("Agent Engine returned invalid JSON.") from exc
+
+    try:
+        payload = _RESPONSE_ADAPTER.validate_python(raw_payload)
+    except ValidationError as exc:
+        raise AgentEngineContractError(
+            "Agent Engine response did not match the expected contract."
+        ) from exc
+
+    return _map_job_analysis(payload)
 
 
 def _build_review_payload(

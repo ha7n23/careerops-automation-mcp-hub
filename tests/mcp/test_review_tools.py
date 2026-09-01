@@ -6,6 +6,9 @@ from careerops_automation_mcp_hub.application.agent_engine import (
     AgentEngineJobAnalysis,
     AgentEngineReviewDecision,
 )
+from careerops_automation_mcp_hub.application.services.get_application_analysis import (
+    GetApplicationAnalysisService,
+)
 from careerops_automation_mcp_hub.application.services.prepare_application import (
     PrepareApplicationService,
 )
@@ -47,6 +50,30 @@ class _ReviewMCPAgentEngineClient:
             status=AgentEngineAnalysisStatus.AWAITING_REVIEW,
             thread_id="THR-MCP-REVIEW",
             job_id=job_id,
+            role_title="Junior AI Engineer",
+            fit_score=0.84,
+            requirements=(),
+            evidence_matches=(),
+            cv_proposals=(),
+            reviewable_proposal_ids=("CVP-001",),
+            blocked_proposal_ids=(),
+            allowed_review_actions=(),
+            review_status="pending",
+        )
+
+    async def get_job_analysis(
+        self,
+        *,
+        user_id: str,
+        thread_id: str,
+    ) -> AgentEngineJobAnalysis:
+        if self.job_id is None:
+            raise AssertionError("Preparation must run before recovery.")
+
+        return AgentEngineJobAnalysis(
+            status=AgentEngineAnalysisStatus.AWAITING_REVIEW,
+            thread_id=thread_id,
+            job_id=self.job_id,
             role_title="Junior AI Engineer",
             fit_score=0.84,
             requirements=(),
@@ -110,6 +137,11 @@ async def review_mcp_client():
         agent_engine_client,
     )
 
+    get_application_analysis_service = GetApplicationAnalysisService(
+        unit_of_work_factory,
+        agent_engine_client,
+    )
+
     review_service = ReviewApplicationService(
         unit_of_work_factory,
         agent_engine_client,
@@ -125,6 +157,7 @@ async def review_mcp_client():
         unit_of_work_factory=unit_of_work_factory,
         prepare_application_service=prepare_service,
         review_application_service=review_service,
+        get_application_analysis_service=get_application_analysis_service,
     )
 
     async with Client(
@@ -253,3 +286,55 @@ async def test_review_application_replay_does_not_resubmit(
 
     assert agent_engine_client.analysis_call_count == 1
     assert agent_engine_client.review_call_count == 1
+
+
+@pytest.mark.anyio
+async def test_get_application_analysis_recovers_awaiting_review_state(
+    review_mcp_client,
+) -> None:
+    client, _ = review_mcp_client
+
+    created = await client.call_tool(
+        "create_application",
+        {
+            "company_name": "Monzo",
+            "role_title": "Junior AI Engineer",
+            "idempotency_key": "analysis-recovery-create-001",
+        },
+    )
+
+    assert created.structured_content is not None
+    application_id = created.structured_content["application_id"]
+
+    prepared = await client.call_tool(
+        "prepare_application",
+        {
+            "application_id": application_id,
+            "job_description": "Strong Python engineering skills are essential.",
+        },
+    )
+
+    assert prepared.is_error is False
+
+    recovered = await client.call_tool(
+        "get_application_analysis",
+        {
+            "application_id": application_id,
+        },
+    )
+
+    assert recovered.is_error is False
+    assert recovered.structured_content is not None
+
+    content = recovered.structured_content
+
+    assert content["application"]["application_id"] == application_id
+    assert content["application"]["status"] == "preparing"
+
+    assert content["preparation"]["status"] == "awaiting_review"
+    assert content["preparation"]["agent_engine_thread_id"] == "THR-MCP-REVIEW"
+
+    assert content["analysis"]["status"] == "awaiting_review"
+    assert content["analysis"]["thread_id"] == "THR-MCP-REVIEW"
+    assert content["analysis"]["job_id"] == application_id
+    assert content["analysis"]["reviewable_proposal_ids"] == ["CVP-001"]
