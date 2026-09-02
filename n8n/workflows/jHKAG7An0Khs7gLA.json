@@ -1,0 +1,507 @@
+{
+  "updatedAt": "2026-09-02T11:44:50.712Z",
+  "createdAt": "2026-09-01T19:16:43.925Z",
+  "id": "jHKAG7An0Khs7gLA",
+  "name": "CareerOps - Human Review",
+  "description": null,
+  "active": true,
+  "isArchived": false,
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "careerops/application-review",
+        "authentication": "headerAuth",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [
+        0,
+        0
+      ],
+      "id": "29644d62-52a7-4579-8754-64f22b8ef52c",
+      "name": "Webhook",
+      "webhookId": "db82895d-f496-45cb-a2a3-be6eab819a98",
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "pZ0T3koqPrDlXWeO",
+          "name": "Header Auth account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "const body = $json.body ?? {};\n\nconst reviewRequestId = String(body.review_request_id ?? '').trim();\nconst applicationId = String(body.application_id ?? '').trim();\nconst action = String(body.action ?? '').trim().toLowerCase();\n\nconst allowedActions = [\n  'approve',\n  'edit',\n  'reject',\n  'regenerate',\n];\n\nif (!reviewRequestId) {\n  throw new Error('review_request_id is required.');\n}\n\nif (!applicationId) {\n  throw new Error('application_id is required.');\n}\n\nif (!allowedActions.includes(action)) {\n  throw new Error(\n    `Invalid review action: ${action || '<blank>'}.`\n  );\n}\n\nconst expectedProposals = Array.isArray(body.expected_proposals)\n  ? body.expected_proposals.map(proposal => ({\n      proposal_id: String(proposal.proposal_id ?? '').trim(),\n      proposed_text: String(proposal.proposed_text ?? ''),\n    }))\n  : [];\n\nif (expectedProposals.length === 0) {\n  throw new Error(\n    'expected_proposals must contain at least one proposal.'\n  );\n}\n\nif (\n  expectedProposals.some(\n    proposal =>\n      !proposal.proposal_id ||\n      !proposal.proposed_text\n  )\n) {\n  throw new Error(\n    'Each expected proposal must contain proposal_id and proposed_text.'\n  );\n}\n\nconst expectedProposalIds =\n  expectedProposals.map(\n    proposal => proposal.proposal_id\n  );\n\nconst edits = Array.isArray(body.edits)\n  ? body.edits\n  : [];\n\nif (action === 'edit' && edits.length === 0) {\n  throw new Error(\n    'An edit review must contain at least one edited proposal.'\n  );\n}\n\nreturn {\n  json: {\n    review_request_id: reviewRequestId,\n    application_id: applicationId,\n    action,\n    expected_proposals: expectedProposals,\n    expected_proposal_ids: expectedProposalIds,\n    edits,\n    reviewer_comment:\n      body.reviewer_comment == null\n        ? null\n        : String(body.reviewer_comment).trim() || null,\n\n    review_idempotency_key:\n      `careerops-review-${reviewRequestId}`,\n  },\n};"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        224,
+        0
+      ],
+      "id": "94cc5ba0-2c4c-4e22-b4a7-52e134b6f929",
+      "name": "Validate Review Request"
+    },
+    {
+      "parameters": {
+        "endpointUrl": "={{ $env.CAREEROPS_MCP_URL }}",
+        "tool": {
+          "__rl": true,
+          "value": "get_application_analysis",
+          "mode": "list",
+          "cachedResultName": "get_application_analysis"
+        },
+        "parameters": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "application_id": "={{ $('Validate Review Request').item.json.application_id }}"
+          },
+          "matchingColumns": [
+            "application_id"
+          ],
+          "schema": [
+            {
+              "id": "application_id",
+              "displayName": "Application Id",
+              "defaultMatch": false,
+              "required": true,
+              "display": true,
+              "type": "string",
+              "removed": false
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.mcpClient",
+      "typeVersion": 1.1,
+      "position": [
+        448,
+        0
+      ],
+      "id": "bdb5b408-5174-42c2-a504-2ecabea28715",
+      "name": "Get Current Analysis"
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "const request = $('Validate Review Request').item.json;\n\nconst analysis =\n  $('Get Current Analysis').item.json.structuredContent.analysis;\n\nconst expectedIds =\n  [...request.expected_proposal_ids].sort();\n\nconst currentIds =\n  [...analysis.reviewable_proposal_ids].sort();\n\nif (analysis.status === 'awaiting_review') {\n  if (!analysis.allowed_review_actions.includes(request.action)) {\n    throw new Error(\n      `Review action '${request.action}' is not currently allowed.`\n    );\n  }\n\n  if (\n    JSON.stringify(expectedIds) !==\n    JSON.stringify(currentIds)\n  ) {\n    throw new Error(\n      'The review request is stale: current reviewable proposals have changed.'\n    );\n  }\n\n  const currentProposals =\n    analysis.cv_proposals\n      .filter(proposal =>\n        currentIds.includes(proposal.proposal_id)\n      )\n      .map(proposal => ({\n        proposal_id: proposal.proposal_id,\n        proposed_text: proposal.proposed_text,\n      }))\n      .sort((a, b) =>\n        a.proposal_id.localeCompare(b.proposal_id)\n      );\n\n  const expectedProposals =\n    request.expected_proposals\n      .map(proposal => ({\n        proposal_id: proposal.proposal_id,\n        proposed_text: proposal.proposed_text,\n      }))\n      .sort((a, b) =>\n        a.proposal_id.localeCompare(b.proposal_id)\n      );\n\n  if (\n    JSON.stringify(expectedProposals) !==\n    JSON.stringify(currentProposals)\n  ) {\n    throw new Error(\n      'The review request is stale: proposal content has changed.'\n    );\n  }\n} else if (analysis.status !== 'completed') {\n  throw new Error(\n    `Unsupported analysis status: ${analysis.status}`\n  );\n}\n\nconst currentProposals =\n  analysis.cv_proposals.filter(\n    proposal =>\n      request.expected_proposal_ids.includes(\n        proposal.proposal_id\n      )\n  );\n\nreturn {\n  json: {\n    ...request,\n    analysis_status: analysis.status,\n    current_reviewable_proposals: currentProposals,\n    current_reviewable_proposal_ids:\n      request.expected_proposal_ids,\n  },\n};"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        672,
+        0
+      ],
+      "id": "180140e6-5b40-474d-a477-8d133a1257a1",
+      "name": "Validate Current Review State"
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{\n{\n  \"review_request_id\": $('Validate Review Request').item.json.review_request_id,\n  \"application_id\": $('Validate Review Request').item.json.application_id,\n  \"status\": \"accepted\"\n}\n}}",
+        "options": {
+          "responseCode": 202
+        }
+      },
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.5,
+      "position": [
+        896,
+        0
+      ],
+      "id": "dc5e6a07-3d1e-4183-9f14-823afb997c91",
+      "name": "Respond Review Accepted"
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "const review =\n  $('Validate Current Review State').item.json;\n\nconst proposalIds = review.expected_proposal_ids;\n\nlet edits = [];\n\nif (review.action === 'edit') {\n  edits = review.edits.map(edit => ({\n    proposal_id: String(edit.proposal_id ?? '').trim(),\n    edited_text: String(edit.edited_text ?? '').trim(),\n  }));\n\n  const editIds = edits\n    .map(edit => edit.proposal_id)\n    .sort();\n\n  const expectedIds = [...proposalIds].sort();\n\n  if (\n    JSON.stringify(editIds) !==\n    JSON.stringify(expectedIds)\n  ) {\n    throw new Error(\n      'An edit decision must provide replacement text for every proposal under review.'\n    );\n  }\n\n  if (\n    edits.some(\n      edit =>\n        !edit.proposal_id ||\n        !edit.edited_text\n    )\n  ) {\n    throw new Error(\n      'Edited proposal IDs and replacement text must not be blank.'\n    );\n  }\n}\n\nconst approvedProposalIds =\n  review.action === 'approve'\n    ? proposalIds\n    : [];\n\nconst rejectedProposalIds =\n  review.action === 'reject' ||\n  review.action === 'regenerate'\n    ? proposalIds\n    : [];\n\nreturn {\n  json: {\n    application_id: review.application_id,\n    idempotency_key: review.review_idempotency_key,\n    action: review.action,\n    approved_proposal_ids: approvedProposalIds,\n    rejected_proposal_ids: rejectedProposalIds,\n    edits,\n    reviewer_comment: review.reviewer_comment,\n  },\n};"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1120,
+        0
+      ],
+      "id": "aafbe5ec-a360-4a6d-aefe-7a518203b735",
+      "name": "Build Review Payload"
+    },
+    {
+      "parameters": {
+        "endpointUrl": "={{ $env.CAREEROPS_MCP_URL }}",
+        "tool": {
+          "__rl": true,
+          "value": "review_application",
+          "mode": "list",
+          "cachedResultName": "review_application"
+        },
+        "parameters": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "application_id": "={{ $json.application_id }}",
+            "idempotency_key": "={{ $json.idempotency_key }}",
+            "action": "={{ $json.action }}",
+            "approved_proposal_ids": "={{ $json.approved_proposal_ids }}",
+            "rejected_proposal_ids": "={{ $json.rejected_proposal_ids }}",
+            "edits": "={{ $json.edits }}",
+            "reviewer_comment": "={{ $json.reviewer_comment || \"\" }}"
+          },
+          "matchingColumns": [],
+          "schema": [
+            {
+              "id": "application_id",
+              "displayName": "Application Id",
+              "defaultMatch": false,
+              "required": true,
+              "display": true,
+              "type": "string",
+              "removed": false
+            },
+            {
+              "id": "idempotency_key",
+              "displayName": "Idempotency Key",
+              "defaultMatch": false,
+              "required": true,
+              "display": true,
+              "type": "string",
+              "removed": false
+            },
+            {
+              "id": "action",
+              "displayName": "action",
+              "defaultMatch": false,
+              "required": true,
+              "display": true,
+              "type": "string",
+              "removed": false
+            },
+            {
+              "id": "approved_proposal_ids",
+              "displayName": "Approved Proposal Ids",
+              "defaultMatch": false,
+              "required": false,
+              "display": true,
+              "type": "string",
+              "removed": false
+            },
+            {
+              "id": "rejected_proposal_ids",
+              "displayName": "Rejected Proposal Ids",
+              "defaultMatch": false,
+              "required": false,
+              "display": true,
+              "type": "string",
+              "removed": false
+            },
+            {
+              "id": "edits",
+              "displayName": "Edits",
+              "defaultMatch": false,
+              "required": false,
+              "display": true,
+              "type": "string",
+              "removed": false
+            },
+            {
+              "id": "reviewer_comment",
+              "displayName": "Reviewer Comment",
+              "defaultMatch": false,
+              "required": false,
+              "display": true,
+              "type": "string",
+              "removed": false
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {
+          "timeout": 600000
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.mcpClient",
+      "typeVersion": 1.1,
+      "position": [
+        1344,
+        0
+      ],
+      "id": "ca60ac94-3e04-4ec5-b8dd-aec305a3396a",
+      "name": "Review Application",
+      "retryOnFail": true,
+      "maxTries": 2,
+      "waitBetweenTries": 5000
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 3
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.review_result_state }}",
+                    "rightValue": "completed",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    },
+                    "id": "b3f5325e-ae7c-4783-b300-394cbddaec3b"
+                  }
+                ],
+                "combinator": "and"
+              }
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 3
+                },
+                "conditions": [
+                  {
+                    "id": "b4d20118-4739-40d7-b87d-739f9300cbf4",
+                    "leftValue": "={{ $json.review_result_state }}",
+                    "rightValue": "awaiting_review",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals",
+                      "name": "filter.operator.equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              }
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 3
+                },
+                "conditions": [
+                  {
+                    "id": "cd381be4-e8c4-434d-9f6a-7f1d59b1284d",
+                    "leftValue": "={{ $json.review_result_state }}",
+                    "rightValue": "failed",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals",
+                      "name": "filter.operator.equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              }
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 3
+                },
+                "conditions": [
+                  {
+                    "id": "8e89260d-7258-4b14-80a0-05effe0d7e01",
+                    "leftValue": "={{ $json.review_result_state }}",
+                    "rightValue": "outcome_unknown",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals",
+                      "name": "filter.operator.equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              }
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.4,
+      "position": [
+        1792,
+        0
+      ],
+      "id": "a099fdf7-5ee6-49ec-a379-a3dc707435b1",
+      "name": "Review Outcome"
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "const structured = $json.structuredContent ?? {};\nconst submission = structured.submission ?? {};\n\nconst status = String(submission.status ?? '').trim().toLowerCase();\n\nconst outcome =\n  submission.outcome == null\n    ? null\n    : String(submission.outcome).trim().toLowerCase();\n\nlet reviewResultState;\n\nif (\n  status === 'completed' &&\n  (outcome === 'completed' || outcome === 'awaiting_review')\n) {\n  reviewResultState = outcome;\n} else if (status === 'failed') {\n  reviewResultState = 'failed';\n} else if (status === 'outcome_unknown') {\n  reviewResultState = 'outcome_unknown';\n} else {\n  throw new Error(\n    `Unexpected review result. status=${status || '<blank>'}, outcome=${outcome || '<blank>'}`\n  );\n}\n\nreturn {\n  json: {\n    ...$json,\n    review_result_state: reviewResultState,\n  },\n};"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1568,
+        0
+      ],
+      "id": "a6115b07-9216-46b8-8186-1d402fef5597",
+      "name": "Normalize Review Result"
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "const structured = $json.structuredContent ?? {};\nconst applicationId =\n  structured.application?.application_id ?? '<unknown>';\n\nconst state =\n  $json.review_result_state ?? '<unknown>';\n\nthrow new Error(\n  `CareerOps review ended in durable '${state}' state for application ${applicationId}. Manual inspection/recovery is required; the workflow will not guess or retry the business operation.`\n);"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2080,
+        64
+      ],
+      "id": "40ef86f7-c43e-443b-8d5a-1371e6449d1e",
+      "name": "Review Operational Failure"
+    }
+  ],
+  "connections": {
+    "Webhook": {
+      "main": [
+        [
+          {
+            "node": "Validate Review Request",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validate Review Request": {
+      "main": [
+        [
+          {
+            "node": "Get Current Analysis",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Current Analysis": {
+      "main": [
+        [
+          {
+            "node": "Validate Current Review State",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validate Current Review State": {
+      "main": [
+        [
+          {
+            "node": "Respond Review Accepted",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Respond Review Accepted": {
+      "main": [
+        [
+          {
+            "node": "Build Review Payload",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Review Payload": {
+      "main": [
+        [
+          {
+            "node": "Review Application",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Review Application": {
+      "main": [
+        [
+          {
+            "node": "Normalize Review Result",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Normalize Review Result": {
+      "main": [
+        [
+          {
+            "node": "Review Outcome",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Review Outcome": {
+      "main": [
+        [],
+        [],
+        [
+          {
+            "node": "Review Operational Failure",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Review Operational Failure",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate"
+  },
+  "staticData": null,
+  "meta": {
+    "templateCredsSetupCompleted": true
+  },
+  "nodeGroups": [],
+  "pinData": {},
+  "versionId": "5b31d024-e311-40b9-9c5c-a7f9b58e5773",
+  "activeVersionId": "5b31d024-e311-40b9-9c5c-a7f9b58e5773",
+  "versionCounter": 86,
+  "triggerCount": 1,
+  "sourceWorkflowId": null,
+  "tags": [],
+  "versionMetadata": {
+    "name": "Version 1.4",
+    "description": ""
+  }
+}

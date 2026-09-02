@@ -1,0 +1,31 @@
+services:
+  n8n:
+    image: docker.n8n.io/n8nio/n8n:2.36.8
+    container_name: careerops-n8n
+    restart: unless-stopped
+
+    ports:
+      - "5678:5678"
+
+    environment:
+      N8N_PORT: "5678"
+      N8N_PROTOCOL: "http"
+      N8N_ENFORCE_SETTINGS_FILE_PERMISSIONS: "true"
+      GENERIC_TIMEZONE: "Europe/London"
+      TZ: "Europe/London"
+
+
+      CAREEROPS_MCP_URL: "${CAREEROPS_MCP_URL:-http://host.docker.internal:8001/mcp}"
+      N8N_RUNNERS_TASK_TIMEOUT: "300"
+      N8N_BLOCK_ENV_ACCESS_IN_NODE: "false"
+
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+    volumes:
+      - n8n_data:/home/node/.n8n
+
+volumes:
+  n8n_data:
+    external: true
+    name: n8n_data

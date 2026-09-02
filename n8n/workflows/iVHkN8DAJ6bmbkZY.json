@@ -1,0 +1,634 @@
+{
+  "updatedAt": "2026-09-02T11:43:43.676Z",
+  "createdAt": "2026-09-01T18:24:45.677Z",
+  "id": "iVHkN8DAJ6bmbkZY",
+  "name": "CareerOps - Preparation Reconciliation",
+  "description": null,
+  "active": true,
+  "isArchived": false,
+  "nodes": [
+    {
+      "parameters": {
+        "unit": "minutes"
+      },
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1.1,
+      "position": [
+        224,
+        -48
+      ],
+      "id": "59dbff47-5c62-4818-813c-1930d241a174",
+      "name": "Wait for Preparation",
+      "webhookId": "17e812bd-36e9-48bd-8c7f-3891ffc9e793"
+    },
+    {
+      "parameters": {
+        "endpointUrl": "={{ $env.CAREEROPS_MCP_URL }}",
+        "tool": {
+          "__rl": true,
+          "value": "prepare_application",
+          "mode": "list",
+          "cachedResultName": "prepare_application"
+        },
+        "parameters": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "application_id": "={{ $('Execute Sub-workflow Trigger').item.json.application_id }}",
+            "job_description": "={{ $('Execute Sub-workflow Trigger').item.json.job_description }}"
+          },
+          "matchingColumns": [],
+          "schema": [
+            {
+              "id": "application_id",
+              "displayName": "Application Id",
+              "defaultMatch": false,
+              "required": true,
+              "display": true,
+              "type": "string",
+              "removed": false
+            },
+            {
+              "id": "job_description",
+              "displayName": "Job Description",
+              "defaultMatch": false,
+              "required": true,
+              "display": true,
+              "type": "string",
+              "removed": false
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {
+          "timeout": 600000
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.mcpClient",
+      "typeVersion": 1.1,
+      "position": [
+        448,
+        -48
+      ],
+      "id": "aba4cef1-f01e-473d-825c-9719ce5c55ae",
+      "name": "Recheck Preparation",
+      "retryOnFail": true,
+      "maxTries": 2,
+      "waitBetweenTries": 5000
+    },
+    {
+      "parameters": {
+        "workflowInputs": {
+          "values": [
+            {
+              "name": "application_id"
+            },
+            {
+              "name": "job_description"
+            }
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.executeWorkflowTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        0,
+        -48
+      ],
+      "id": "c0f3a7cc-472d-4297-924a-eae76c9bc463",
+      "name": "Execute Sub-workflow Trigger"
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 3
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.structuredContent.preparation.status }}",
+                    "rightValue": "awaiting_review",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    },
+                    "id": "fb69121d-9721-4939-85e0-144cb7d8f23c"
+                  }
+                ],
+                "combinator": "and"
+              }
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 3
+                },
+                "conditions": [
+                  {
+                    "id": "132ed8df-0604-4146-b16c-3a95d43e7d3e",
+                    "leftValue": "={{ $json.structuredContent.preparation.status }}",
+                    "rightValue": "starting",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals",
+                      "name": "filter.operator.equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              }
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 3
+                },
+                "conditions": [
+                  {
+                    "id": "c310eeb4-2b95-4a89-8210-5d39546bf33c",
+                    "leftValue": "={{ $json.structuredContent.preparation.status }}",
+                    "rightValue": "completed",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals",
+                      "name": "filter.operator.equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              }
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 3
+                },
+                "conditions": [
+                  {
+                    "id": "dd629bfe-0e2f-4c3e-95d0-63166de2fcb3",
+                    "leftValue": "={{ $json.structuredContent.preparation.status }}",
+                    "rightValue": "failed",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals",
+                      "name": "filter.operator.equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              }
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 3
+                },
+                "conditions": [
+                  {
+                    "id": "51968838-279b-4b7d-b794-8f16f2b0b271",
+                    "leftValue": "={{ $json.structuredContent.preparation.status }}",
+                    "rightValue": "outcome_unknown",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals",
+                      "name": "filter.operator.equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              }
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.4,
+      "position": [
+        672,
+        -96
+      ],
+      "id": "72f3001f-3a84-4ef6-929e-678ebe3da191",
+      "name": "Recheck Status"
+    },
+    {
+      "parameters": {
+        "amount": 3,
+        "unit": "minutes"
+      },
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1.1,
+      "position": [
+        944,
+        -208
+      ],
+      "id": "7f698e1a-2e60-4254-bbcd-5c10c05e5abf",
+      "name": "Wait - Final Preparation Check",
+      "webhookId": "f4e794ec-c1c0-437d-819c-bf1bc570d3c4"
+    },
+    {
+      "parameters": {
+        "endpointUrl": "={{ $env.CAREEROPS_MCP_URL }}",
+        "tool": {
+          "__rl": true,
+          "value": "prepare_application",
+          "mode": "list",
+          "cachedResultName": "prepare_application"
+        },
+        "parameters": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "application_id": "={{ $('Execute Sub-workflow Trigger').item.json.application_id }}",
+            "job_description": "={{ $('Execute Sub-workflow Trigger').item.json.job_description }}"
+          },
+          "matchingColumns": [],
+          "schema": [
+            {
+              "id": "application_id",
+              "displayName": "Application Id",
+              "defaultMatch": false,
+              "required": true,
+              "display": true,
+              "type": "string",
+              "removed": false
+            },
+            {
+              "id": "job_description",
+              "displayName": "Job Description",
+              "defaultMatch": false,
+              "required": true,
+              "display": true,
+              "type": "string",
+              "removed": false
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {
+          "timeout": 600000
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.mcpClient",
+      "typeVersion": 1.1,
+      "position": [
+        1120,
+        -208
+      ],
+      "id": "48185b82-6095-478c-b8c8-88e3b88804ea",
+      "name": "Final Recheck Preparation",
+      "retryOnFail": true,
+      "maxTries": 2,
+      "waitBetweenTries": 5000
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 3
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.structuredContent.preparation.status }}",
+                    "rightValue": "awaiting_review",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    },
+                    "id": "fb69121d-9721-4939-85e0-144cb7d8f23c"
+                  }
+                ],
+                "combinator": "and"
+              }
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 3
+                },
+                "conditions": [
+                  {
+                    "id": "132ed8df-0604-4146-b16c-3a95d43e7d3e",
+                    "leftValue": "={{ $json.structuredContent.preparation.status }}",
+                    "rightValue": "starting",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals",
+                      "name": "filter.operator.equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              }
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 3
+                },
+                "conditions": [
+                  {
+                    "id": "c310eeb4-2b95-4a89-8210-5d39546bf33c",
+                    "leftValue": "={{ $json.structuredContent.preparation.status }}",
+                    "rightValue": "completed",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals",
+                      "name": "filter.operator.equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              }
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 3
+                },
+                "conditions": [
+                  {
+                    "id": "dd629bfe-0e2f-4c3e-95d0-63166de2fcb3",
+                    "leftValue": "={{ $json.structuredContent.preparation.status }}",
+                    "rightValue": "failed",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals",
+                      "name": "filter.operator.equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              }
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 3
+                },
+                "conditions": [
+                  {
+                    "id": "51968838-279b-4b7d-b794-8f16f2b0b271",
+                    "leftValue": "={{ $json.structuredContent.preparation.status }}",
+                    "rightValue": "outcome_unknown",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals",
+                      "name": "filter.operator.equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              }
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.4,
+      "position": [
+        1344,
+        -256
+      ],
+      "id": "a2f2fff0-ac13-4612-a93e-6871673b097e",
+      "name": "Final Recheck Status"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "7ef5c041-158c-46b8-b430-ce26f8f91c30",
+              "name": "application_id",
+              "value": "={{ $json.structuredContent.application.application_id }}",
+              "type": "string"
+            },
+            {
+              "id": "7b23774b-5cd5-4cd2-ad32-fc87e644a163",
+              "name": "status",
+              "value": "={{ $json.structuredContent.preparation.status }}",
+              "type": "string"
+            },
+            {
+              "id": "7a31bee0-539b-4f32-9c33-6aab805169e0",
+              "name": "thread_id",
+              "value": "={{ $json.structuredContent.preparation.agent_engine_thread_id }}",
+              "type": "string"
+            },
+            {
+              "id": "e85e3a64-e4d7-4d7d-9eb0-aef2988ebda2",
+              "name": "error_message",
+              "value": "={{ $json.structuredContent.preparation.error_message }}",
+              "type": "string"
+            },
+            {
+              "id": "3a529f80-edf2-419e-8cf4-967ff9ea0a2b",
+              "name": "=reconciliation_exhausted",
+              "value": "={{ $json.structuredContent.preparation.status === 'starting' }}",
+              "type": "boolean"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.5,
+      "position": [
+        1568,
+        -48
+      ],
+      "id": "78d2a3b4-1bdc-44dc-9dbf-941f1943e484",
+      "name": "Return Reconciliation Result"
+    }
+  ],
+  "connections": {
+    "Wait for Preparation": {
+      "main": [
+        [
+          {
+            "node": "Recheck Preparation",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Execute Sub-workflow Trigger": {
+      "main": [
+        [
+          {
+            "node": "Wait for Preparation",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Recheck Preparation": {
+      "main": [
+        [
+          {
+            "node": "Recheck Status",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Recheck Status": {
+      "main": [
+        [
+          {
+            "node": "Return Reconciliation Result",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Wait - Final Preparation Check",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Return Reconciliation Result",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Return Reconciliation Result",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Return Reconciliation Result",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Wait - Final Preparation Check": {
+      "main": [
+        [
+          {
+            "node": "Final Recheck Preparation",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Final Recheck Preparation": {
+      "main": [
+        [
+          {
+            "node": "Final Recheck Status",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Final Recheck Status": {
+      "main": [
+        [
+          {
+            "node": "Return Reconciliation Result",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Return Reconciliation Result",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Return Reconciliation Result",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Return Reconciliation Result",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Return Reconciliation Result",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate"
+  },
+  "staticData": null,
+  "meta": null,
+  "nodeGroups": [],
+  "pinData": {},
+  "versionId": "17177ea4-3e88-4f72-996e-1d9c5e1ba14a",
+  "activeVersionId": "17177ea4-3e88-4f72-996e-1d9c5e1ba14a",
+  "versionCounter": 102,
+  "triggerCount": 0,
+  "sourceWorkflowId": null,
+  "tags": [],
+  "versionMetadata": {
+    "name": "Version 1.4",
+    "description": ""
+  }
+}
