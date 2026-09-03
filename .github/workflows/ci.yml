@@ -1,0 +1,113 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  quality:
+    name: Quality & Tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    env:
+      AGENT_ENGINE_SERVICE_KEY: ci-only-service-key-000000000000000
+      AGENT_ENGINE_READ_TIMEOUT_SECONDS: "600"
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7.0.1
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v9.0.0
+        with:
+          version: "0.12.1"
+          enable-cache: true
+
+      - name: Install Python
+        run: uv python install 3.12
+
+      - name: Install dependencies
+        run: uv sync --frozen --python 3.12
+
+      - name: Check formatting
+        run: uv run --frozen ruff format --check .
+
+      - name: Lint
+        run: uv run --frozen ruff check .
+
+      - name: Type check
+        run: uv run --frozen mypy src
+
+      - name: Run tests
+        run: uv run --frozen pytest -q
+
+  migrations:
+    name: PostgreSQL Migrations
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: careerops
+          POSTGRES_PASSWORD: careerops
+          POSTGRES_DB: careerops
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U careerops -d careerops"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    env:
+      DATABASE_URL: postgresql+asyncpg://careerops:careerops@localhost:5432/careerops
+      AGENT_ENGINE_SERVICE_KEY: ci-only-service-key-000000000000000
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7.0.1
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v9.0.0
+        with:
+          version: "0.12.1"
+          enable-cache: true
+
+      - name: Install Python
+        run: uv python install 3.12
+
+      - name: Install dependencies
+        run: uv sync --frozen --python 3.12
+
+      - name: Apply migrations
+        run: uv run --frozen alembic upgrade head
+
+  compose:
+    name: Compose Validation
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7.0.1
+
+      - name: Validate n8n Compose
+        run: docker compose -f n8n/compose.yaml config --quiet
+
+      - name: Validate OpenClaw Compose
+        run: docker compose -f openclaw/compose.yaml config --quiet

@@ -1,5 +1,8 @@
 # CareerOps Automation & MCP Hub
 
+
+[![CI](https://github.com/ha7n23/careerops-automation-mcp-hub/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/ha7n23/careerops-automation-mcp-hub/actions/workflows/ci.yml)
+
 **A secure automation and Model Context Protocol (MCP) integration layer for CareerOps, connecting deterministic n8n workflows and a conversational OpenClaw assistant to an evidence-grounded AI application engine.**
 
 This repository is **Module 2 of the CareerOps platform**. It sits between user-facing automation clients and the CareerOps Agent Engine, providing durable application lifecycle management, MCP-native tools, human-in-the-loop review, failure reconciliation, and least-privilege AI assistant access.
