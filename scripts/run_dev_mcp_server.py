@@ -1,5 +1,6 @@
-"""Development-only Streamable HTTP MCP server for local n8n integration."""
+"""Development-only Streamable HTTP MCP server for local MCP clients."""
 
+import os
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
@@ -8,8 +9,8 @@ from fastapi import FastAPI
 
 from careerops_automation_mcp_hub.bootstrap import create_runtime
 
-USER_ID = "USER-DEMO-001"
-ACTOR_ID = "N8N-LOCAL-DEV"
+USER_ID = os.getenv("CAREEROPS_DEV_MCP_USER_ID", "USER-DEMO-001")
+ACTOR_ID = os.getenv("CAREEROPS_DEV_MCP_ACTOR_ID", "LOCAL-DEV")
 
 
 def create_app() -> FastAPI:

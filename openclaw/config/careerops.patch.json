@@ -1,0 +1,47 @@
+{
+  "agents": {
+    "defaults": {
+      "model": {
+        "primary": "openrouter/nvidia/nemotron-3.5-lightning:free",
+        "fallbacks": [
+          "openrouter/nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free"
+        ]
+      },
+      "models": {
+        "openrouter/nvidia/nemotron-3.5-lightning:free": {},
+        "openrouter/nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free": {}
+      },
+      "workspace": "/home/node/.openclaw/workspace",
+      "skills": [
+        "careerops"
+      ]
+    }
+  },
+  "tools": {
+    "profile": "minimal",
+    "alsoAllow": [
+      "careerops__*"
+    ]
+  },
+  "mcp": {
+    "servers": {
+      "careerops": {
+        "url": "http://host.docker.internal:8001/mcp",
+        "transport": "streamable-http",
+        "connectTimeout": 5,
+        "timeout": 660,
+        "toolFilter": {
+          "include": [
+            "create_application",
+            "get_application",
+            "get_application_analysis",
+            "get_pending_actions",
+            "list_applications",
+            "prepare_application",
+            "review_application"
+          ]
+        }
+      }
+    }
+  }
+}
