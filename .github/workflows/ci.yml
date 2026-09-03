@@ -22,7 +22,24 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
 
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: careerops
+          POSTGRES_PASSWORD: careerops
+          POSTGRES_DB: careerops_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U careerops -d careerops_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
     env:
+      DATABASE_URL: postgresql+asyncpg://careerops:careerops@localhost:5432/careerops_test
+      TEST_DATABASE_URL: postgresql+asyncpg://careerops:careerops@localhost:5432/careerops_test
       AGENT_ENGINE_SERVICE_KEY: ci-only-service-key-000000000000000
       AGENT_ENGINE_READ_TIMEOUT_SECONDS: "600"
 
@@ -50,6 +67,9 @@ jobs:
 
       - name: Type check
         run: uv run --frozen mypy src
+
+      - name: Apply test database migrations
+        run: uv run --frozen alembic upgrade head
 
       - name: Run tests
         run: uv run --frozen pytest -q
