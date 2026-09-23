@@ -7,7 +7,10 @@ from careerops_automation_mcp_hub.application.idempotency import (
     IdempotencyClaim,
     IdempotencyOperation,
 )
-from careerops_automation_mcp_hub.domain.action_item import ActionItem
+from careerops_automation_mcp_hub.domain.action_item import (
+    ActionItem,
+    ActionItemType,
+)
 from careerops_automation_mcp_hub.domain.application_event import ApplicationEvent
 from careerops_automation_mcp_hub.domain.application_lifecycle import (
     ApplicationStatus,
@@ -54,6 +57,18 @@ class ApplicationEventRepository(Protocol):
 class ActionItemRepository(Protocol):
     async def add(self, action: ActionItem) -> None:
         """Persist an action item."""
+
+    async def get_pending_for_application(
+        self,
+        *,
+        user_id: str,
+        application_id: UUID,
+        action_type: ActionItemType,
+    ) -> ActionItem | None:
+        """Return one pending action for an application and action type."""
+
+    async def save(self, action: ActionItem) -> None:
+        """Persist changes to an existing action item."""
 
     async def list_pending(
         self,

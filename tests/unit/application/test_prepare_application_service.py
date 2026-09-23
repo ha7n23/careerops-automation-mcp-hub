@@ -18,6 +18,7 @@ from careerops_automation_mcp_hub.application.services.prepare_application impor
     PrepareApplicationCommand,
     PrepareApplicationService,
 )
+from careerops_automation_mcp_hub.domain.action_item import ActionItemType
 from careerops_automation_mcp_hub.domain.application_lifecycle import (
     ApplicationStatus,
 )
@@ -78,6 +79,16 @@ class _FakeAgentEngineClient:
             raise AssertionError("Fake Agent Engine analysis was not configured.")
 
         return self.analysis
+
+    async def get_job_analysis(
+        self,
+        *,
+        user_id: str,
+        thread_id: str,
+    ) -> AgentEngineJobAnalysis:
+        raise AssertionError(
+            "Analysis recovery is not expected in preparation-service tests."
+        )
 
     async def review_job_analysis(
         self,
@@ -231,24 +242,42 @@ async def test_awaiting_review_keeps_application_preparing() -> None:
         )
     )
 
-    service, applications, events, _ = _build_service(client=client)
+    service, applications, events, unit_of_work_factory = _build_service(client=client)
 
     await applications.add(application)
 
-    result = await service.execute(
-        PrepareApplicationCommand(
-            user_id="USER-001",
-            application_id=application.application_id,
-            job_description="Strong Python skills are essential.",
-            actor_id="USER-001",
-        )
+    command = PrepareApplicationCommand(
+        user_id="USER-001",
+        application_id=application.application_id,
+        job_description="Strong Python skills are essential.",
+        actor_id="USER-001",
     )
+
+    result = await service.execute(command)
+    replay = await service.execute(command)
 
     assert result.application.status is ApplicationStatus.PREPARING
     assert result.preparation.status is ApplicationPreparationStatus.AWAITING_REVIEW
     assert result.preparation.agent_engine_thread_id == "THR-001"
+    assert replay.started_new_analysis is False
+    assert len(client.calls) == 1
 
     assert len(events.all()) == 1
+
+    async with unit_of_work_factory() as unit_of_work:
+        pending_actions = await unit_of_work.actions.list_pending(
+            user_id="USER-001",
+        )
+
+    assert len(pending_actions) == 1
+
+    review_action = pending_actions[0]
+
+    assert review_action.application_id == application.application_id
+    assert review_action.action_type is ActionItemType.REVIEW_CV
+    assert review_action.description == (
+        "Review tailored CV changes for Junior AI Engineer at Monzo."
+    )
 
 
 @pytest.mark.anyio

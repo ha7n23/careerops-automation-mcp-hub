@@ -10,6 +10,7 @@ from sqlalchemy import (
     String,
     Text,
     UniqueConstraint,
+    text,
 )
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.dialects.postgresql import UUID as PostgreSQLUUID
@@ -417,6 +418,12 @@ class ActionItemRecord(Base):
             "user_id",
             "status",
             "due_at",
+        ),
+        Index(
+            "uq_action_items_pending_review_per_application",
+            "application_id",
+            unique=True,
+            postgresql_where=text("status = 'pending' AND action_type = 'review_cv'"),
         ),
     )
 

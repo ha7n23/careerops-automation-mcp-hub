@@ -10,6 +10,7 @@ from careerops_automation_mcp_hub.application.idempotency import (
 from careerops_automation_mcp_hub.domain.action_item import (
     ActionItem,
     ActionItemStatus,
+    ActionItemType,
 )
 from careerops_automation_mcp_hub.domain.application_event import (
     ApplicationEvent,
@@ -95,6 +96,32 @@ class InMemoryActionItemRepository:
         self._actions: dict[UUID, ActionItem] = {}
 
     async def add(self, action: ActionItem) -> None:
+        self._actions[action.action_id] = action
+
+    async def get_pending_for_application(
+        self,
+        *,
+        user_id: str,
+        application_id: UUID,
+        action_type: ActionItemType,
+    ) -> ActionItem | None:
+        matches = [
+            action
+            for action in self._actions.values()
+            if action.user_id == user_id
+            and action.application_id == application_id
+            and action.action_type is action_type
+            and action.status is ActionItemStatus.PENDING
+        ]
+
+        if len(matches) > 1:
+            raise RuntimeError(
+                "Multiple pending actions exist for one application and action type."
+            )
+
+        return matches[0] if matches else None
+
+    async def save(self, action: ActionItem) -> None:
         self._actions[action.action_id] = action
 
     async def list_pending(

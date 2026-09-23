@@ -30,6 +30,7 @@ from careerops_automation_mcp_hub.application.services.update_application_status
 )
 from careerops_automation_mcp_hub.domain.action_item import (
     ActionItem,
+    ActionItemStatus,
     ActionItemType,
 )
 from careerops_automation_mcp_hub.domain.application_event import (
@@ -41,6 +42,7 @@ from careerops_automation_mcp_hub.domain.application_lifecycle import (
 )
 from careerops_automation_mcp_hub.domain.job_application import JobApplication
 from careerops_automation_mcp_hub.infrastructure.database.models import (
+    ActionItemRecord,
     ApplicationEventRecord,
     JobApplicationRecord,
 )
@@ -368,6 +370,73 @@ async def test_pending_actions_are_user_scoped_and_due_filtered(
     )
 
     assert pending == (due_action,)
+
+
+@pytest.mark.anyio
+async def test_pending_action_can_be_found_and_completed(
+    postgres_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    unit_of_work_factory = SqlAlchemyApplicationUnitOfWorkFactory(
+        postgres_session_factory
+    )
+    create_service = CreateApplicationService(unit_of_work_factory)
+
+    created = await create_service.execute(
+        CreateApplicationCommand(
+            user_id="USER-001",
+            company_name="Monzo",
+            role_title="Junior AI Engineer",
+            actor_id="USER-001",
+            idempotency_key="action-completion-create-1",
+        )
+    )
+    application_id = created.application.application_id
+    completed_at = datetime(2026, 9, 23, 12, 0, tzinfo=UTC)
+
+    action = ActionItem.create(
+        application_id=application_id,
+        user_id="USER-001",
+        action_type=ActionItemType.REVIEW_CV,
+        description="Review tailored CV changes.",
+    )
+
+    async with unit_of_work_factory() as unit_of_work:
+        await unit_of_work.actions.add(action)
+        await unit_of_work.commit()
+
+    async with unit_of_work_factory() as unit_of_work:
+        pending = await unit_of_work.actions.get_pending_for_application(
+            user_id="USER-001",
+            application_id=application_id,
+            action_type=ActionItemType.REVIEW_CV,
+        )
+
+        assert pending is not None
+
+        pending.complete(at=completed_at)
+        await unit_of_work.actions.save(pending)
+        await unit_of_work.commit()
+
+    async with unit_of_work_factory() as unit_of_work:
+        assert (
+            await unit_of_work.actions.get_pending_for_application(
+                user_id="USER-001",
+                application_id=application_id,
+                action_type=ActionItemType.REVIEW_CV,
+            )
+            is None
+        )
+
+    async with postgres_session_factory() as session:
+        result = await session.execute(
+            select(ActionItemRecord).where(
+                ActionItemRecord.action_id == action.action_id
+            )
+        )
+        record = result.scalar_one()
+
+    assert record.status == ActionItemStatus.COMPLETED.value
+    assert record.completed_at == completed_at
 
 
 @pytest.mark.anyio

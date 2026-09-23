@@ -448,7 +448,7 @@ The latest Module 2 validation passed:
 Ruff format       ✓
 Ruff lint         ✓
 mypy              ✓
-pytest            199 passed
+pytest            202 passed
 Compose validation ✓
 OpenClaw secrets   clean
 ```
@@ -465,6 +465,14 @@ The OpenClaw policy also has dedicated automated tests covering:
 * expected timeout policy
 
 ---
+
+## Update
+
+Pending CV-review actions are synchronised with durable preparation state:
+entering `awaiting_review` creates one `review_cv` action, successful final
+review completes it, and regeneration keeps it pending. The accompanying
+migration backfills older awaiting-review applications and prevents duplicate
+pending review actions.
 
 ## Relationship to CareerOps
 

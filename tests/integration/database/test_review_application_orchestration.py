@@ -17,6 +17,10 @@ from careerops_automation_mcp_hub.application.services.review_application import
     ReviewApplicationCommand,
     ReviewApplicationService,
 )
+from careerops_automation_mcp_hub.domain.action_item import (
+    ActionItem,
+    ActionItemType,
+)
 from careerops_automation_mcp_hub.domain.application_lifecycle import (
     ApplicationStatus,
 )
@@ -58,6 +62,16 @@ class _BlockingReviewAgentEngineClient:
     ) -> AgentEngineJobAnalysis:
         raise AssertionError(
             "Job analysis is not expected in review orchestration tests."
+        )
+
+    async def get_job_analysis(
+        self,
+        *,
+        user_id: str,
+        thread_id: str,
+    ) -> AgentEngineJobAnalysis:
+        raise AssertionError(
+            "Analysis recovery is not expected in review orchestration tests."
         )
 
     async def review_job_analysis(
@@ -117,8 +131,16 @@ async def _persist_reviewable_application(
         thread_id="THR-REVIEW-CONCURRENCY",
     )
 
+    review_action = ActionItem.create(
+        application_id=application.application_id,
+        user_id=application.user_id,
+        action_type=ActionItemType.REVIEW_CV,
+        description="Review tailored CV changes.",
+    )
+
     async with unit_of_work_factory() as unit_of_work:
         await unit_of_work.preparations.add(preparation)
+        await unit_of_work.actions.add(review_action)
         await unit_of_work.commit()
 
     return application, preparation
@@ -231,9 +253,13 @@ async def test_concurrent_review_keys_cannot_cross_remote_boundary_twice(
             user_id=application.user_id,
             application_id=application.application_id,
         )
+        pending_actions = await unit_of_work.actions.list_pending(
+            user_id=application.user_id,
+        )
 
     assert stored_preparation is not None
     assert stored_preparation.preparation_id == preparation.preparation_id
 
     assert stored_application is not None
     assert stored_application.status is ApplicationStatus.READY_TO_APPLY
+    assert pending_actions == ()

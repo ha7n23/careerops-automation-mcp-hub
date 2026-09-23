@@ -30,6 +30,7 @@ from careerops_automation_mcp_hub.application.ports.unit_of_work import (
     ApplicationUnitOfWork,
     ApplicationUnitOfWorkFactory,
 )
+from careerops_automation_mcp_hub.domain.action_item import ActionItemType
 from careerops_automation_mcp_hub.domain.application_event import (
     ApplicationEvent,
     ApplicationEventType,
@@ -374,6 +375,16 @@ class ReviewApplicationService:
                 )
 
                 await unit_of_work.preparations.save(preparation)
+
+                review_action = await unit_of_work.actions.get_pending_for_application(
+                    user_id=user_id,
+                    application_id=application_id,
+                    action_type=ActionItemType.REVIEW_CV,
+                )
+
+                if review_action is not None:
+                    review_action.complete(at=completed_at)
+                    await unit_of_work.actions.save(review_action)
 
                 if application.status is ApplicationStatus.PREPARING:
                     event = _transition_application(

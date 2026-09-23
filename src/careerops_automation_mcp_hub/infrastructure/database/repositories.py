@@ -13,6 +13,7 @@ from careerops_automation_mcp_hub.application.idempotency import (
 from careerops_automation_mcp_hub.domain.action_item import (
     ActionItem,
     ActionItemStatus,
+    ActionItemType,
 )
 from careerops_automation_mcp_hub.domain.application_event import ApplicationEvent
 from careerops_automation_mcp_hub.domain.application_lifecycle import (
@@ -128,6 +129,50 @@ class SqlAlchemyActionItemRepository:
 
     async def add(self, action: ActionItem) -> None:
         self._session.add(action_item_to_record(action))
+
+    async def get_pending_for_application(
+        self,
+        *,
+        user_id: str,
+        application_id: UUID,
+        action_type: ActionItemType,
+    ) -> ActionItem | None:
+        statement = (
+            select(ActionItemRecord)
+            .where(
+                ActionItemRecord.user_id == user_id,
+                ActionItemRecord.application_id == application_id,
+                ActionItemRecord.action_type == action_type.value,
+                ActionItemRecord.status == ActionItemStatus.PENDING.value,
+            )
+            .limit(2)
+        )
+
+        result = await self._session.execute(statement)
+        records = result.scalars().all()
+
+        if len(records) > 1:
+            raise RuntimeError(
+                "Multiple pending actions exist for one application and action type."
+            )
+
+        return action_item_from_record(records[0]) if records else None
+
+    async def save(self, action: ActionItem) -> None:
+        statement = (
+            update(ActionItemRecord)
+            .where(
+                ActionItemRecord.action_id == action.action_id,
+                ActionItemRecord.user_id == action.user_id,
+                ActionItemRecord.application_id == action.application_id,
+            )
+            .values(
+                status=action.status.value,
+                completed_at=action.completed_at,
+            )
+        )
+
+        await self._session.execute(statement)
 
     async def list_pending(
         self,

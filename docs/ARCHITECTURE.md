@@ -461,7 +461,7 @@ This behaviour is shared conceptually across the n8n and OpenClaw clients.
 
 ## 11. Human-in-the-loop review
 
-When Module 1 returns an analysis requiring review, Module 2 records the preparation as `awaiting_review` and keeps the application in `preparing` until a valid review completes.
+When Module 1 returns an analysis requiring review, Module 2 records the preparation as `awaiting_review`, creates one pending `review_cv` action in the same transaction, and keeps the application in `preparing` until a valid review completes. A completed final review marks that action complete, while regeneration leaves it pending for the next review cycle.
 
 The user can then make an explicit decision through the review capability.
 
@@ -732,7 +732,7 @@ At the final OpenClaw hardening checkpoint, the repository passed:
 Ruff format       ✓
 Ruff lint         ✓
 mypy              ✓
-pytest             199 passed
+pytest             202 passed
 Compose validation ✓
 OpenClaw secrets   clean
 ```

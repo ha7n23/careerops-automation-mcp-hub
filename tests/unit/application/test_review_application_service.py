@@ -20,6 +20,11 @@ from careerops_automation_mcp_hub.application.services.review_application import
     ReviewApplicationCommand,
     ReviewApplicationService,
 )
+from careerops_automation_mcp_hub.domain.action_item import (
+    ActionItem,
+    ActionItemStatus,
+    ActionItemType,
+)
 from careerops_automation_mcp_hub.domain.application_lifecycle import (
     ApplicationStatus,
 )
@@ -71,6 +76,16 @@ class _FakeAgentEngineClient:
         job_description: str,
     ) -> AgentEngineJobAnalysis:
         raise AssertionError("Job analysis is not expected in review-service tests.")
+
+    async def get_job_analysis(
+        self,
+        *,
+        user_id: str,
+        thread_id: str,
+    ) -> AgentEngineJobAnalysis:
+        raise AssertionError(
+            "Analysis recovery is not expected in review-service tests."
+        )
 
     async def review_job_analysis(
         self,
@@ -153,9 +168,17 @@ async def _build_service(
         thread_id="THR-REVIEW-001",
     )
 
+    review_action = ActionItem.create(
+        application_id=application.application_id,
+        user_id=application.user_id,
+        action_type=ActionItemType.REVIEW_CV,
+        description="Review tailored CV changes.",
+    )
+
     async with unit_of_work_factory() as unit_of_work:
         await unit_of_work.applications.add(application)
         await unit_of_work.preparations.add(preparation)
+        await unit_of_work.actions.add(review_action)
         await unit_of_work.commit()
 
     return (
@@ -195,6 +218,15 @@ async def test_completed_review_advances_application_to_ready() -> None:
         status=AgentEngineAnalysisStatus.COMPLETED,
     )
 
+    async with unit_of_work_factory() as unit_of_work:
+        review_action = await unit_of_work.actions.get_pending_for_application(
+            user_id=application.user_id,
+            application_id=application.application_id,
+            action_type=ActionItemType.REVIEW_CV,
+        )
+
+    assert review_action is not None
+
     result = await service.execute(_approve_command(application))
 
     assert result.started_new_review is True
@@ -208,21 +240,33 @@ async def test_completed_review_advances_application_to_ready() -> None:
 
     assert len(client.review_calls) == 1
     assert len(events.all()) == 1
+    assert review_action.status is ActionItemStatus.COMPLETED
+    assert review_action.completed_at is not None
 
     async with unit_of_work_factory() as unit_of_work:
         stored = await unit_of_work.review_submissions.get_by_idempotency_key(
             user_id="USER-001",
             idempotency_key="review-001",
         )
+        pending_actions = await unit_of_work.actions.list_pending(
+            user_id="USER-001",
+        )
 
     assert stored is not None
     assert stored.status is ApplicationReviewSubmissionStatus.COMPLETED
+    assert pending_actions == ()
 
 
 @pytest.mark.anyio
 async def test_review_can_return_to_awaiting_review() -> None:
     client = _FakeAgentEngineClient()
-    service, application, preparation, events, _ = await _build_service(client)
+    (
+        service,
+        application,
+        preparation,
+        events,
+        unit_of_work_factory,
+    ) = await _build_service(client)
 
     client.analysis = _analysis(
         application=application,
@@ -246,6 +290,15 @@ async def test_review_can_return_to_awaiting_review() -> None:
     assert result.preparation is preparation
     assert application.status is ApplicationStatus.PREPARING
     assert events.all() == ()
+
+    async with unit_of_work_factory() as unit_of_work:
+        pending_actions = await unit_of_work.actions.list_pending(
+            user_id="USER-001",
+        )
+
+    assert len(pending_actions) == 1
+    assert pending_actions[0].action_type is ActionItemType.REVIEW_CV
+    assert pending_actions[0].status is ActionItemStatus.PENDING
 
 
 @pytest.mark.anyio

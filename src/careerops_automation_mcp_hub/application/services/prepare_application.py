@@ -22,6 +22,10 @@ from careerops_automation_mcp_hub.application.ports.unit_of_work import (
     ApplicationUnitOfWork,
     ApplicationUnitOfWorkFactory,
 )
+from careerops_automation_mcp_hub.domain.action_item import (
+    ActionItem,
+    ActionItemType,
+)
 from careerops_automation_mcp_hub.domain.application_event import (
     ApplicationEvent,
     ApplicationEventType,
@@ -281,6 +285,28 @@ class PrepareApplicationService:
                     thread_id=analysis.thread_id,
                     at=completed_at,
                 )
+
+                review_action = await unit_of_work.actions.get_pending_for_application(
+                    user_id=user_id,
+                    application_id=application_id,
+                    action_type=ActionItemType.REVIEW_CV,
+                )
+
+                if review_action is None:
+                    await unit_of_work.actions.add(
+                        ActionItem.create(
+                            application_id=application.application_id,
+                            user_id=application.user_id,
+                            action_type=ActionItemType.REVIEW_CV,
+                            description=(
+                                "Review tailored CV changes for "
+                                f"{application.role_title} at "
+                                f"{application.company_name}."
+                            ),
+                            created_at=completed_at,
+                        )
+                    )
+
             else:
                 preparation.mark_completed(
                     thread_id=analysis.thread_id,

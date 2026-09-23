@@ -17,6 +17,7 @@ from careerops_automation_mcp_hub.application.services.prepare_application impor
     PrepareApplicationCommand,
     PrepareApplicationService,
 )
+from careerops_automation_mcp_hub.domain.action_item import ActionItemType
 from careerops_automation_mcp_hub.domain.application_lifecycle import (
     ApplicationStatus,
 )
@@ -76,6 +77,16 @@ class _ObservingAgentEngineClient:
 
         return self._analysis
 
+    async def get_job_analysis(
+        self,
+        *,
+        user_id: str,
+        thread_id: str,
+    ) -> AgentEngineJobAnalysis:
+        raise AssertionError(
+            "Analysis recovery is not expected in preparation orchestration tests."
+        )
+
     async def review_job_analysis(
         self,
         *,
@@ -95,6 +106,26 @@ def _completed_analysis(
     return AgentEngineJobAnalysis(
         status=AgentEngineAnalysisStatus.COMPLETED,
         thread_id="THR-POSTGRES-001",
+        job_id=job_id,
+        role_title="Junior AI Engineer",
+        fit_score=0.8,
+        requirements=(),
+        evidence_matches=(),
+        cv_proposals=(),
+        reviewable_proposal_ids=(),
+        blocked_proposal_ids=(),
+        allowed_review_actions=(),
+        review_status=None,
+    )
+
+
+def _awaiting_review_analysis(
+    *,
+    job_id: str,
+) -> AgentEngineJobAnalysis:
+    return AgentEngineJobAnalysis(
+        status=AgentEngineAnalysisStatus.AWAITING_REVIEW,
+        thread_id="THR-POSTGRES-REVIEW-001",
         job_id=job_id,
         role_title="Junior AI Engineer",
         fit_score=0.8,
@@ -180,6 +211,57 @@ async def test_starting_state_is_committed_before_remote_analysis(
 
     assert stored_application is not None
     assert stored_application.status is ApplicationStatus.READY_TO_APPLY
+
+
+@pytest.mark.anyio
+async def test_awaiting_review_creates_one_pending_review_action(
+    postgres_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    unit_of_work_factory = SqlAlchemyApplicationUnitOfWorkFactory(
+        postgres_session_factory
+    )
+    application = await _persist_application(unit_of_work_factory)
+
+    client = _ObservingAgentEngineClient(
+        unit_of_work_factory=unit_of_work_factory,
+        application_id=application.application_id,
+        analysis=_awaiting_review_analysis(
+            job_id=str(application.application_id),
+        ),
+    )
+    service = PrepareApplicationService(
+        unit_of_work_factory,
+        client,
+    )
+    command = PrepareApplicationCommand(
+        user_id=application.user_id,
+        application_id=application.application_id,
+        job_description="Strong Python skills are essential.",
+        actor_id=application.user_id,
+    )
+
+    result = await service.execute(command)
+    replay = await service.execute(command)
+
+    assert result.preparation.status is ApplicationPreparationStatus.AWAITING_REVIEW
+    assert result.application.status is ApplicationStatus.PREPARING
+    assert replay.started_new_analysis is False
+    assert client.call_count == 1
+
+    async with unit_of_work_factory() as unit_of_work:
+        pending_actions = await unit_of_work.actions.list_pending(
+            user_id=application.user_id,
+        )
+
+    assert len(pending_actions) == 1
+
+    review_action = pending_actions[0]
+
+    assert review_action.application_id == application.application_id
+    assert review_action.action_type is ActionItemType.REVIEW_CV
+    assert review_action.description == (
+        "Review tailored CV changes for Junior AI Engineer at Example AI."
+    )
 
 
 @pytest.mark.anyio
