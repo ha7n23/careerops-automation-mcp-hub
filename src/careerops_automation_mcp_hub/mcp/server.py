@@ -7,8 +7,13 @@ from mcp.server.auth.settings import AuthSettings
 from mcp.types import ToolAnnotations
 
 from careerops_automation_mcp_hub.application.evidence import (
+    ApprovedEvidence,
+    EvidenceCategory,
     EvidenceDocument,
     EvidenceDocumentHistory,
+    EvidenceLifecycleStatus,
+    EvidenceRegistryEdit,
+    EvidenceRegistryPage,
     EvidenceReviewDecision,
     EvidenceReviewHistory,
     EvidenceReviewRun,
@@ -19,6 +24,9 @@ from careerops_automation_mcp_hub.application.ports.unit_of_work import (
 from careerops_automation_mcp_hub.application.services.create_application import (
     CreateApplicationCommand,
     CreateApplicationService,
+)
+from careerops_automation_mcp_hub.application.services.evidence_registry import (
+    EvidenceRegistryService,
 )
 from careerops_automation_mcp_hub.application.services.evidence_workflow import (
     EvidenceWorkflowService,
@@ -79,6 +87,7 @@ def build_mcp_server(
     review_application_service: ReviewApplicationService,
     get_application_analysis_service: GetApplicationAnalysisService,
     evidence_workflow_service: EvidenceWorkflowService | None = None,
+    evidence_registry_service: EvidenceRegistryService | None = None,
     token_verifier: TokenVerifier | None = None,
     auth: AuthSettings | None = None,
 ) -> MCPServer:
@@ -467,6 +476,112 @@ def build_mcp_server(
                 user_id=principal.user_id,
                 review_run_id=review_run_id,
                 decision=decision,
+            )
+
+    if evidence_registry_service is not None:
+        registry_service = evidence_registry_service
+
+        @mcp.tool(
+            annotations=ToolAnnotations(
+                read_only_hint=True,
+                open_world_hint=False,
+            )
+        )
+        async def search_evidence_registry(
+            query: str | None = None,
+            category: EvidenceCategory | None = None,
+            lifecycle_status: EvidenceLifecycleStatus = (
+                EvidenceLifecycleStatus.ACTIVE
+            ),
+            offset: int = 0,
+            limit: int = 100,
+        ) -> EvidenceRegistryPage:
+            """Search, filter and page the current user's approved evidence."""
+            principal = principal_provider.get_principal()
+
+            return await registry_service.query(
+                user_id=principal.user_id,
+                query=query,
+                category=category,
+                lifecycle_status=lifecycle_status,
+                offset=offset,
+                limit=limit,
+            )
+
+        @mcp.tool(
+            annotations=ToolAnnotations(
+                read_only_hint=True,
+                open_world_hint=False,
+            )
+        )
+        async def get_registry_evidence(
+            evidence_id: str,
+        ) -> ApprovedEvidence:
+            """Retrieve one approved evidence record, including archived data."""
+            principal = principal_provider.get_principal()
+
+            return await registry_service.get(
+                user_id=principal.user_id,
+                evidence_id=evidence_id,
+            )
+
+        @mcp.tool(
+            annotations=ToolAnnotations(
+                read_only_hint=False,
+                destructive_hint=False,
+                idempotent_hint=False,
+                open_world_hint=False,
+            )
+        )
+        async def edit_registry_evidence(
+            evidence_id: str,
+            edit: EvidenceRegistryEdit,
+        ) -> ApprovedEvidence:
+            """Apply an explicit grounded edit to approved evidence."""
+            principal = principal_provider.get_principal()
+
+            return await registry_service.edit(
+                user_id=principal.user_id,
+                evidence_id=evidence_id,
+                edit=edit,
+            )
+
+        @mcp.tool(
+            annotations=ToolAnnotations(
+                read_only_hint=False,
+                destructive_hint=False,
+                idempotent_hint=True,
+                open_world_hint=False,
+            )
+        )
+        async def archive_registry_evidence(
+            evidence_id: str,
+        ) -> ApprovedEvidence:
+            """Archive approved evidence so downstream analysis excludes it."""
+            principal = principal_provider.get_principal()
+
+            return await registry_service.archive(
+                user_id=principal.user_id,
+                evidence_id=evidence_id,
+            )
+
+        @mcp.tool(
+            annotations=ToolAnnotations(
+                read_only_hint=False,
+                destructive_hint=False,
+                idempotent_hint=True,
+                open_world_hint=False,
+            )
+        )
+        async def restore_registry_evidence(
+            evidence_id: str,
+        ) -> ApprovedEvidence:
+            """Restore archived evidence for downstream use."""
+            principal = principal_provider.get_principal()
+
+            return await registry_service.restore(
+                user_id=principal.user_id,
+                evidence_id=evidence_id,
             )
 
     @mcp.resource(

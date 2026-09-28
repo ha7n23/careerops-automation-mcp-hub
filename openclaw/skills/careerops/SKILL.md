@@ -75,6 +75,23 @@ If submission is ambiguous, recover the review before retrying. Never infer
 approval, silently accept a duplicate, or turn pasted text directly into
 approved evidence.
 
+### Evidence Registry management
+
+Use \`careerops__search_evidence_registry\` for current approved evidence.
+Active evidence is the default; request archived evidence explicitly. Use
+\`careerops__get_registry_evidence\` before any registry mutation so the user
+can review the durable record being changed.
+
+Editing, archiving, and restoring evidence require clear user intent. Only use
+\`careerops__edit_registry_evidence\` for changes grounded in a trusted source;
+never add an unsupported technology, capability, or claim. Archiving makes the
+record unavailable to job analysis but does not delete it. Restoring makes it
+eligible for downstream use again.
+
+If a registry mutation has an ambiguous outcome, retrieve the record before
+considering another call. Archive and restore are idempotent; evidence edits
+must not be blindly repeated.
+
 ### Evidence and safety
 
 Never invent CV evidence, employment history, education, skills, achievements, metrics, qualifications, or experience.

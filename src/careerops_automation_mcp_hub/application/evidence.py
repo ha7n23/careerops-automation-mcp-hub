@@ -1,6 +1,6 @@
 from datetime import datetime
 from enum import StrEnum
-from typing import Self
+from typing import Annotated, Self
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
@@ -153,6 +153,59 @@ class ApprovedEvidence(EvidenceContractModel):
     capabilities: list[str]
     approved_claims: list[str]
     source_references: list[EvidenceSourceReference]
+
+
+class EvidenceRegistryPage(EvidenceContractModel):
+    items: list[ApprovedEvidence]
+    count: int = Field(ge=0)
+    total: int = Field(ge=0)
+    limit: int = Field(ge=1, le=100)
+    offset: int = Field(ge=0)
+    has_more: bool
+
+
+EvidenceRegistryEditValue = Annotated[
+    str,
+    Field(min_length=1, max_length=1_000),
+]
+
+
+class EvidenceRegistryEdit(EvidenceInputModel):
+    """Editable, grounded fields accepted by the Evidence Registry."""
+
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
+
+    category: EvidenceCategory | None = None
+    title: str | None = Field(default=None, min_length=1, max_length=250)
+    technologies: list[EvidenceRegistryEditValue] | None = Field(
+        default=None,
+        max_length=50,
+    )
+    capabilities: list[EvidenceRegistryEditValue] | None = Field(
+        default=None,
+        max_length=50,
+    )
+    approved_claims: list[EvidenceRegistryEditValue] | None = Field(
+        default=None,
+        min_length=1,
+        max_length=50,
+    )
+
+    @model_validator(mode="after")
+    def require_change(self) -> Self:
+        if all(
+            value is None
+            for value in (
+                self.category,
+                self.title,
+                self.technologies,
+                self.capabilities,
+                self.approved_claims,
+            )
+        ):
+            raise ValueError("An evidence edit must change at least one field.")
+
+        return self
 
 
 class EvidenceProposalEdit(EvidenceInputModel):
