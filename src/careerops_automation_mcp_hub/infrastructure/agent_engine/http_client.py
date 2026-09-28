@@ -1,4 +1,4 @@
-from typing import Annotated, Literal
+from typing import Annotated, Literal, NoReturn, TypeVar
 from urllib.parse import quote
 
 import httpx
@@ -23,7 +23,9 @@ from careerops_automation_mcp_hub.application.agent_engine import (
 from careerops_automation_mcp_hub.application.errors import (
     AgentEngineAnalysisNotFoundError,
     AgentEngineAuthenticationError,
+    AgentEngineConflictError,
     AgentEngineContractError,
+    AgentEngineNotFoundError,
     AgentEngineRequestError,
     AgentEngineUnavailableError,
     AgentEngineValidationError,
@@ -98,6 +100,9 @@ _RESPONSE_ADAPTER: TypeAdapter[_AwaitingReviewPayload | _CompletedPayload] = (
     )
 )
 
+_ResponseT = TypeVar("_ResponseT")
+_HttpMethod = Literal["GET", "POST", "PATCH"]
+
 
 class HttpAgentEngineClient:
     """HTTP adapter for the CareerOps Agent Engine API."""
@@ -122,7 +127,8 @@ class HttpAgentEngineClient:
         job_description: str,
     ) -> AgentEngineJobAnalysis:
         """Start an evidence-grounded Module 1 job analysis."""
-        return await self._post_job_analysis(
+        return await self._request_job_analysis(
+            method="POST",
             path="/api/v1/job-analysis",
             user_id=user_id,
             json_payload={
@@ -144,7 +150,8 @@ class HttpAgentEngineClient:
             safe="",
         )
 
-        return await self._get_job_analysis(
+        return await self._request_job_analysis(
+            method="GET",
             path=f"/api/v1/job-analysis/{encoded_thread_id}",
             user_id=user_id,
         )
@@ -162,26 +169,92 @@ class HttpAgentEngineClient:
             safe="",
         )
 
-        return await self._post_job_analysis(
+        return await self._request_job_analysis(
+            method="POST",
             path=(f"/api/v1/job-analysis/{encoded_thread_id}/review"),
             user_id=user_id,
             json_payload=_build_review_payload(decision),
         )
 
-    async def _get_job_analysis(
+    async def _request_job_analysis(
         self,
         *,
+        method: _HttpMethod,
         path: str,
         user_id: str,
+        json_payload: dict[str, object] | None = None,
     ) -> AgentEngineJobAnalysis:
+        payload = await self._request_json(
+            method=method,
+            path=path,
+            user_id=user_id,
+            response_adapter=_RESPONSE_ADAPTER,
+            json_payload=json_payload,
+            not_found_error=AgentEngineAnalysisNotFoundError,
+        )
+
+        return _map_job_analysis(payload)
+
+    async def _request_json(
+        self,
+        *,
+        method: _HttpMethod,
+        path: str,
+        user_id: str,
+        response_adapter: TypeAdapter[_ResponseT],
+        json_payload: dict[str, object] | None = None,
+        not_found_error: type[AgentEngineNotFoundError] = AgentEngineNotFoundError,
+    ) -> _ResponseT:
+        response = await self._request(
+            method=method,
+            path=path,
+            user_id=user_id,
+            json_payload=json_payload,
+            not_found_error=not_found_error,
+        )
+
         try:
-            response = await self._client.get(
-                path,
-                headers={
-                    "X-CareerOps-Service-Key": self._service_key,
-                    "X-User-ID": user_id,
-                },
-            )
+            raw_payload = response.json()
+        except ValueError as exc:
+            raise AgentEngineContractError(
+                "Agent Engine returned invalid JSON."
+            ) from exc
+
+        try:
+            return response_adapter.validate_python(raw_payload)
+        except ValidationError as exc:
+            raise AgentEngineContractError(
+                "Agent Engine response did not match the expected contract."
+            ) from exc
+
+    async def _request(
+        self,
+        *,
+        method: _HttpMethod,
+        path: str,
+        user_id: str,
+        json_payload: dict[str, object] | None = None,
+        not_found_error: type[AgentEngineNotFoundError] = AgentEngineNotFoundError,
+    ) -> httpx.Response:
+        headers = {
+            "X-CareerOps-Service-Key": self._service_key,
+            "X-User-ID": user_id,
+        }
+
+        try:
+            if json_payload is None:
+                response = await self._client.request(
+                    method,
+                    path,
+                    headers=headers,
+                )
+            else:
+                response = await self._client.request(
+                    method,
+                    path,
+                    headers=headers,
+                    json=json_payload,
+                )
         except httpx.TimeoutException as exc:
             raise AgentEngineUnavailableError(
                 "Agent Engine request timed out."
@@ -190,55 +263,12 @@ class HttpAgentEngineClient:
             raise AgentEngineUnavailableError("Agent Engine is unavailable.") from exc
 
         if not response.is_success:
-            _raise_for_agent_engine_error(response)
-
-        return _parse_job_analysis_response(response)
-
-    async def _post_job_analysis(
-        self,
-        *,
-        path: str,
-        user_id: str,
-        json_payload: dict[str, object],
-    ) -> AgentEngineJobAnalysis:
-        try:
-            response = await self._client.post(
-                path,
-                headers={
-                    "X-CareerOps-Service-Key": self._service_key,
-                    "X-User-ID": user_id,
-                },
-                json=json_payload,
+            _raise_for_agent_engine_error(
+                response,
+                not_found_error=not_found_error,
             )
-        except httpx.TimeoutException as exc:
-            raise AgentEngineUnavailableError(
-                "Agent Engine request timed out."
-            ) from exc
-        except httpx.RequestError as exc:
-            raise AgentEngineUnavailableError("Agent Engine is unavailable.") from exc
 
-        if not response.is_success:
-            _raise_for_agent_engine_error(response)
-
-        return _parse_job_analysis_response(response)
-
-
-def _parse_job_analysis_response(
-    response: httpx.Response,
-) -> AgentEngineJobAnalysis:
-    try:
-        raw_payload = response.json()
-    except ValueError as exc:
-        raise AgentEngineContractError("Agent Engine returned invalid JSON.") from exc
-
-    try:
-        payload = _RESPONSE_ADAPTER.validate_python(raw_payload)
-    except ValidationError as exc:
-        raise AgentEngineContractError(
-            "Agent Engine response did not match the expected contract."
-        ) from exc
-
-    return _map_job_analysis(payload)
+        return response
 
 
 def _build_review_payload(
@@ -318,7 +348,9 @@ def _map_job_analysis(
 
 def _raise_for_agent_engine_error(
     response: httpx.Response,
-) -> None:
+    *,
+    not_found_error: type[AgentEngineNotFoundError],
+) -> NoReturn:
     status_code = response.status_code
 
     if status_code in {401, 403}:
@@ -327,13 +359,23 @@ def _raise_for_agent_engine_error(
         )
 
     if status_code == 404:
-        raise AgentEngineAnalysisNotFoundError("Agent Engine analysis was not found.")
+        raise not_found_error(
+            _extract_error_detail(response)
+            or "The requested Agent Engine resource is unavailable."
+        )
+
+    if status_code == 409:
+        raise AgentEngineConflictError(
+            _extract_error_detail(response)
+            or "Agent Engine rejected the operation because its state changed."
+        )
 
     if status_code == 422:
         raise AgentEngineValidationError(
             _extract_error_detail(response) or "Agent Engine rejected the request."
         )
 
+    # Do not expose upstream 5xx details to callers.
     if status_code >= 500:
         raise AgentEngineUnavailableError(f"Agent Engine returned HTTP {status_code}.")
 
@@ -353,4 +395,20 @@ def _extract_error_detail(
 
     detail = payload.get("detail")
 
-    return detail if isinstance(detail, str) else None
+    if isinstance(detail, str):
+        return detail
+
+    if not isinstance(detail, list):
+        return None
+
+    messages: list[str] = []
+
+    for item in detail:
+        if not isinstance(item, dict):
+            continue
+
+        message = item.get("msg")
+        if isinstance(message, str):
+            messages.append(message)
+
+    return "; ".join(messages) or None

@@ -28,8 +28,24 @@ class AgentEngineValidationError(AgentEngineError):
         super().__init__(detail)
 
 
-class AgentEngineAnalysisNotFoundError(AgentEngineError):
+class AgentEngineNotFoundError(AgentEngineError):
+    """Raised when a user-scoped Agent Engine resource is unavailable."""
+
+    def __init__(self, detail: str) -> None:
+        self.detail = detail
+        super().__init__(detail)
+
+
+class AgentEngineAnalysisNotFoundError(AgentEngineNotFoundError):
     """Raised when a requested Agent Engine analysis is unavailable."""
+
+
+class AgentEngineConflictError(AgentEngineError):
+    """Raised when Agent Engine workflow state rejects an operation."""
+
+    def __init__(self, detail: str) -> None:
+        self.detail = detail
+        super().__init__(detail)
 
 
 class AgentEngineContractError(AgentEngineError):

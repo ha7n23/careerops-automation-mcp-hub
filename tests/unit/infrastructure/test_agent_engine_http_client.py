@@ -11,6 +11,7 @@ from careerops_automation_mcp_hub.application.agent_engine import (
 from careerops_automation_mcp_hub.application.errors import (
     AgentEngineAnalysisNotFoundError,
     AgentEngineAuthenticationError,
+    AgentEngineConflictError,
     AgentEngineContractError,
     AgentEngineUnavailableError,
     AgentEngineValidationError,
@@ -404,3 +405,151 @@ async def test_get_job_analysis_maps_missing_analysis() -> None:
                 user_id="USER-001",
                 thread_id="THR-MISSING",
             )
+
+
+@pytest.mark.anyio
+async def test_fastapi_validation_error_preserves_messages() -> None:
+    def handler(
+        request: httpx.Request,
+    ) -> httpx.Response:
+        return httpx.Response(
+            422,
+            json={
+                "detail": [
+                    {"loc": ["body", "job_id"], "msg": "Field required"},
+                    {
+                        "loc": ["body", "job_description"],
+                        "msg": "String should have at least 1 character",
+                    },
+                ]
+            },
+        )
+
+    transport = httpx.MockTransport(handler)
+
+    async with httpx.AsyncClient(
+        base_url="http://agent-engine.test",
+        transport=transport,
+    ) as http_client:
+        client = HttpAgentEngineClient(
+            http_client,
+            service_key="test-service-key",
+        )
+
+        with pytest.raises(
+            AgentEngineValidationError,
+            match="Field required; String should have at least 1 character",
+        ):
+            await client.analyse_job(
+                user_id="USER-001",
+                job_id="",
+                job_description="",
+            )
+
+
+@pytest.mark.anyio
+async def test_agent_engine_conflict_preserves_safe_detail() -> None:
+    def handler(
+        request: httpx.Request,
+    ) -> httpx.Response:
+        return httpx.Response(
+            409,
+            json={"detail": "The review is already complete."},
+        )
+
+    transport = httpx.MockTransport(handler)
+
+    async with httpx.AsyncClient(
+        base_url="http://agent-engine.test",
+        transport=transport,
+    ) as http_client:
+        client = HttpAgentEngineClient(
+            http_client,
+            service_key="test-service-key",
+        )
+
+        with pytest.raises(
+            AgentEngineConflictError,
+            match="review is already complete",
+        ):
+            await client.review_job_analysis(
+                user_id="USER-001",
+                thread_id="THR-001",
+                decision=AgentEngineReviewDecision(
+                    action=AgentEngineReviewAction.APPROVE,
+                    approved_proposal_ids=("CVP-001",),
+                ),
+            )
+
+
+@pytest.mark.anyio
+async def test_invalid_json_response_raises_contract_error() -> None:
+    def handler(
+        request: httpx.Request,
+    ) -> httpx.Response:
+        return httpx.Response(
+            200,
+            content=b"not-json",
+            headers={"content-type": "application/json"},
+        )
+
+    transport = httpx.MockTransport(handler)
+
+    async with httpx.AsyncClient(
+        base_url="http://agent-engine.test",
+        transport=transport,
+    ) as http_client:
+        client = HttpAgentEngineClient(
+            http_client,
+            service_key="test-service-key",
+        )
+
+        with pytest.raises(
+            AgentEngineContractError,
+            match="invalid JSON",
+        ):
+            await client.analyse_job(
+                user_id="USER-001",
+                job_id="JOB-001",
+                job_description="Strong Python required.",
+            )
+
+
+@pytest.mark.anyio
+async def test_upstream_failure_is_not_retried_or_exposed() -> None:
+    request_count = 0
+
+    def handler(
+        request: httpx.Request,
+    ) -> httpx.Response:
+        nonlocal request_count
+        request_count += 1
+
+        return httpx.Response(
+            502,
+            json={"detail": "Private upstream implementation detail."},
+        )
+
+    transport = httpx.MockTransport(handler)
+
+    async with httpx.AsyncClient(
+        base_url="http://agent-engine.test",
+        transport=transport,
+    ) as http_client:
+        client = HttpAgentEngineClient(
+            http_client,
+            service_key="test-service-key",
+        )
+
+        with pytest.raises(
+            AgentEngineUnavailableError,
+            match="HTTP 502",
+        ) as exc_info:
+            await client.analyse_job(
+                user_id="USER-001",
+                job_id="JOB-001",
+                job_description="Strong Python required.",
+            )
+
+    assert request_count == 1
+    assert "Private upstream" not in str(exc_info.value)
