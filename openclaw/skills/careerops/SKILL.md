@@ -92,6 +92,29 @@ If a registry mutation has an ambiguous outcome, retrieve the record before
 considering another call. Archive and restore are idempotent; evidence edits
 must not be blindly repeated.
 
+### Standalone job analysis and final CVs
+
+For a tracked application, prefer the application preparation and review tools
+so Module 2 preserves its durable application state. Use
+\`careerops__start_job_analysis\` only when the user clearly requests a
+standalone analysis with a supplied job description.
+
+Before reviewing a standalone analysis, call
+\`careerops__get_job_analysis\`. Approval, rejection, editing, and regeneration
+require clear user intent and may reference only the current reviewable
+proposal identifiers. If starting or reviewing has an ambiguous outcome,
+recover the durable analysis; do not blindly retry it.
+
+Use \`careerops__generate_final_cv\` only when the user explicitly requests a
+final CV from a completed analysis whose review outcome is approved or edited,
+and use the selected source document identifier. The same analysis/document
+pair safely recovers its existing version. Use \`careerops__get_final_cv\` to
+reconcile an uncertain result and report verified artifact metadata.
+
+Binary DOCX and PDF downloads are delivered through the authenticated
+CareerOps web API, not through an MCP tool. Never claim that an artifact was
+downloaded, sent, or submitted externally merely because it was generated.
+
 ### Evidence and safety
 
 Never invent CV evidence, employment history, education, skills, achievements, metrics, qualifications, or experience.

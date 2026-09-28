@@ -42,6 +42,18 @@ from careerops_automation_mcp_hub.application.evidence import (
     EvidenceReviewHistory,
     EvidenceReviewRun,
 )
+from careerops_automation_mcp_hub.application.final_cv import (
+    CVArtifactDownload,
+    CVArtifactFormat,
+    CVVersionMetadata,
+    FinalCVGenerationRequest,
+    FinalCVVersion,
+)
+from careerops_automation_mcp_hub.application.job_analysis import (
+    JobAnalysisReviewDecision,
+    JobAnalysisRun,
+    JobAnalysisStartRequest,
+)
 
 
 class _PayloadModel(BaseModel):
@@ -120,6 +132,16 @@ _EVIDENCE_REVIEW_ADAPTER = TypeAdapter(EvidenceReviewRun)
 _EVIDENCE_REVIEW_HISTORY_ADAPTER = TypeAdapter(EvidenceReviewHistory)
 _APPROVED_EVIDENCE_ADAPTER = TypeAdapter(ApprovedEvidence)
 _EVIDENCE_REGISTRY_PAGE_ADAPTER = TypeAdapter(EvidenceRegistryPage)
+_JOB_ANALYSIS_RUN_ADAPTER: TypeAdapter[JobAnalysisRun] = TypeAdapter(JobAnalysisRun)
+_FINAL_CV_ADAPTER = TypeAdapter(FinalCVVersion)
+_CV_VERSION_ADAPTER = TypeAdapter(CVVersionMetadata)
+
+_ARTIFACT_MEDIA_TYPES = {
+    CVArtifactFormat.DOCX: (
+        "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+    ),
+    CVArtifactFormat.PDF: "application/pdf",
+}
 
 
 class HttpAgentEngineClient:
@@ -342,6 +364,129 @@ class HttpAgentEngineClient:
             user_id=user_id,
             evidence_id=evidence_id,
             action="restore",
+        )
+
+    async def start_job_analysis(
+        self,
+        *,
+        user_id: str,
+        request: JobAnalysisStartRequest,
+    ) -> JobAnalysisRun:
+        """Start one full-contract durable Module 1 job analysis."""
+        return await self._request_json(
+            method="POST",
+            path="/api/v1/job-analysis",
+            user_id=user_id,
+            response_adapter=_JOB_ANALYSIS_RUN_ADAPTER,
+            json_payload=request.model_dump(mode="json"),
+        )
+
+    async def recover_job_analysis(
+        self,
+        *,
+        user_id: str,
+        thread_id: str,
+    ) -> JobAnalysisRun:
+        """Recover one full-contract durable Module 1 job analysis."""
+        encoded_thread_id = quote(thread_id, safe="")
+
+        return await self._request_json(
+            method="GET",
+            path=f"/api/v1/job-analysis/{encoded_thread_id}",
+            user_id=user_id,
+            response_adapter=_JOB_ANALYSIS_RUN_ADAPTER,
+            not_found_error=AgentEngineAnalysisNotFoundError,
+        )
+
+    async def submit_job_analysis_review(
+        self,
+        *,
+        user_id: str,
+        thread_id: str,
+        decision: JobAnalysisReviewDecision,
+    ) -> JobAnalysisRun:
+        """Submit a human decision to one paused Module 1 analysis."""
+        encoded_thread_id = quote(thread_id, safe="")
+
+        return await self._request_json(
+            method="POST",
+            path=f"/api/v1/job-analysis/{encoded_thread_id}/review",
+            user_id=user_id,
+            response_adapter=_JOB_ANALYSIS_RUN_ADAPTER,
+            json_payload=decision.model_dump(mode="json"),
+            not_found_error=AgentEngineAnalysisNotFoundError,
+        )
+
+    async def generate_final_cv(
+        self,
+        *,
+        user_id: str,
+        request: FinalCVGenerationRequest,
+    ) -> FinalCVVersion:
+        """Generate or recover one verified final CV version."""
+        return await self._request_json(
+            method="POST",
+            path="/api/v1/cv-versions",
+            user_id=user_id,
+            response_adapter=_FINAL_CV_ADAPTER,
+            json_payload=request.model_dump(mode="json"),
+        )
+
+    async def get_final_cv(
+        self,
+        *,
+        user_id: str,
+        cv_version_id: str,
+    ) -> CVVersionMetadata:
+        """Retrieve safe metadata for one final CV version."""
+        encoded_version_id = quote(cv_version_id, safe="")
+
+        return await self._request_json(
+            method="GET",
+            path=f"/api/v1/cv-versions/{encoded_version_id}",
+            user_id=user_id,
+            response_adapter=_CV_VERSION_ADAPTER,
+        )
+
+    async def download_final_cv_artifact(
+        self,
+        *,
+        user_id: str,
+        cv_version_id: str,
+        artifact_format: CVArtifactFormat,
+    ) -> CVArtifactDownload:
+        """Download one verified final-CV artifact without exposing storage."""
+        encoded_version_id = quote(cv_version_id, safe="")
+        response = await self._request(
+            method="GET",
+            path=(
+                f"/api/v1/cv-versions/{encoded_version_id}/artifacts/"
+                f"{artifact_format.value}"
+            ),
+            user_id=user_id,
+        )
+
+        media_type = response.headers.get("content-type", "").split(";", 1)[0]
+        if media_type != _ARTIFACT_MEDIA_TYPES[artifact_format]:
+            raise AgentEngineContractError(
+                "Agent Engine returned an unexpected CV artifact media type."
+            )
+
+        content_disposition = response.headers.get("content-disposition", "")
+        if not content_disposition.lower().startswith("attachment;"):
+            raise AgentEngineContractError(
+                "Agent Engine returned invalid CV artifact metadata."
+            )
+
+        if not response.content:
+            raise AgentEngineContractError(
+                "Agent Engine returned an empty CV artifact."
+            )
+
+        return CVArtifactDownload(
+            data=response.content,
+            media_type=media_type,
+            content_disposition=content_disposition,
         )
 
     async def _change_evidence_lifecycle(

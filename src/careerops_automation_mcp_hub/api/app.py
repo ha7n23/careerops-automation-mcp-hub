@@ -7,6 +7,7 @@ from mcp.server.auth.provider import TokenVerifier
 from sqlalchemy.exc import SQLAlchemyError
 
 from careerops_automation_mcp_hub.api.evidence import build_evidence_router
+from careerops_automation_mcp_hub.api.job_cv import build_job_cv_router
 from careerops_automation_mcp_hub.application.errors import (
     AgentEngineAuthenticationError,
     AgentEngineConflictError,
@@ -53,6 +54,13 @@ def create_app(
         build_evidence_router(
             service=runtime.evidence_workflow_service,
             registry_service=runtime.evidence_registry_service,
+            token_verifier=token_verifier,
+            required_scope=runtime.settings.mcp_required_scope,
+        )
+    )
+    app.include_router(
+        build_job_cv_router(
+            service=runtime.job_cv_gateway_service,
             token_verifier=token_verifier,
             required_scope=runtime.settings.mcp_required_scope,
         )
