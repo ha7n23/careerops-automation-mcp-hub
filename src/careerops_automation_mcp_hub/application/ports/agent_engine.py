@@ -5,8 +5,13 @@ from careerops_automation_mcp_hub.application.agent_engine import (
     AgentEngineReviewDecision,
 )
 from careerops_automation_mcp_hub.application.evidence import (
+    ApprovedEvidence,
+    EvidenceCategory,
     EvidenceDocument,
     EvidenceDocumentHistory,
+    EvidenceLifecycleStatus,
+    EvidenceRegistryEdit,
+    EvidenceRegistryPage,
     EvidenceReviewDecision,
     EvidenceReviewHistory,
     EvidenceReviewRun,
@@ -110,4 +115,54 @@ class AgentEngineClient(Protocol):
         decision: EvidenceReviewDecision,
     ) -> EvidenceReviewRun:
         """Submit a complete human evidence decision."""
+        ...
+
+    async def query_evidence_registry(
+        self,
+        *,
+        user_id: str,
+        query: str | None,
+        category: EvidenceCategory | None,
+        lifecycle_status: EvidenceLifecycleStatus,
+        offset: int,
+        limit: int,
+    ) -> EvidenceRegistryPage:
+        """Search, filter and page the user's approved evidence."""
+        ...
+
+    async def get_evidence(
+        self,
+        *,
+        user_id: str,
+        evidence_id: str,
+    ) -> ApprovedEvidence:
+        """Retrieve one user-owned approved evidence record."""
+        ...
+
+    async def edit_evidence(
+        self,
+        *,
+        user_id: str,
+        evidence_id: str,
+        edit: EvidenceRegistryEdit,
+    ) -> ApprovedEvidence:
+        """Replace editable fields on one approved evidence record."""
+        ...
+
+    async def archive_evidence(
+        self,
+        *,
+        user_id: str,
+        evidence_id: str,
+    ) -> ApprovedEvidence:
+        """Archive one approved evidence record idempotently."""
+        ...
+
+    async def restore_evidence(
+        self,
+        *,
+        user_id: str,
+        evidence_id: str,
+    ) -> ApprovedEvidence:
+        """Restore one approved evidence record idempotently."""
         ...

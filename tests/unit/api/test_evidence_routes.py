@@ -1,4 +1,4 @@
-from typing import Any
+from typing import Any, cast
 
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
@@ -73,6 +73,7 @@ def _build_app(
     app.include_router(
         build_evidence_router(
             service=service,  # type: ignore[arg-type]
+            registry_service=cast(Any, service),
             token_verifier=verifier,  # type: ignore[arg-type]
             required_scope="careerops:applications",
         )

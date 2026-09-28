@@ -6,11 +6,19 @@ from mcp.server.auth.provider import TokenVerifier
 from pydantic import BaseModel, ConfigDict, Field
 
 from careerops_automation_mcp_hub.application.evidence import (
+    ApprovedEvidence,
+    EvidenceCategory,
     EvidenceDocument,
     EvidenceDocumentHistory,
+    EvidenceLifecycleStatus,
+    EvidenceRegistryEdit,
+    EvidenceRegistryPage,
     EvidenceReviewDecision,
     EvidenceReviewHistory,
     EvidenceReviewRun,
+)
+from careerops_automation_mcp_hub.application.services.evidence_registry import (
+    EvidenceRegistryService,
 )
 from careerops_automation_mcp_hub.application.services.evidence_workflow import (
     EvidenceWorkflowService,
@@ -23,12 +31,14 @@ DEFAULT_MAX_EVIDENCE_UPLOAD_BYTES = 5 * 1024 * 1024
 def build_evidence_router(
     *,
     service: EvidenceWorkflowService,
+    registry_service: EvidenceRegistryService,
     token_verifier: TokenVerifier,
     required_scope: str,
     max_upload_bytes: int = DEFAULT_MAX_EVIDENCE_UPLOAD_BYTES,
 ) -> APIRouter:
     """Build the authenticated HTTP evidence gateway used by Module 3."""
     router = APIRouter(tags=["Evidence Workflow"])
+    registry_router = APIRouter(tags=["Evidence Registry"])
     bearer = HTTPBearer(auto_error=False)
 
     async def get_principal(
@@ -173,6 +183,88 @@ def build_evidence_router(
             decision=decision,
         )
 
+    @registry_router.get(
+        "/api/v1/evidence",
+        response_model=EvidenceRegistryPage,
+    )
+    async def query_registry(
+        principal: Annotated[Principal, Depends(get_principal)],
+        query: Annotated[
+            str | None,
+            Query(alias="q", min_length=1, max_length=200),
+        ] = None,
+        category: Annotated[EvidenceCategory | None, Query()] = None,
+        lifecycle_status: Annotated[
+            EvidenceLifecycleStatus,
+            Query(),
+        ] = EvidenceLifecycleStatus.ACTIVE,
+        offset: Annotated[int, Query(ge=0, le=10_000)] = 0,
+        limit: Annotated[int, Query(ge=1, le=100)] = 100,
+    ) -> EvidenceRegistryPage:
+        return await registry_service.query(
+            user_id=principal.user_id,
+            query=query,
+            category=category,
+            lifecycle_status=lifecycle_status,
+            offset=offset,
+            limit=limit,
+        )
+
+    @registry_router.get(
+        "/api/v1/evidence/{evidence_id}",
+        response_model=ApprovedEvidence,
+    )
+    async def get_evidence(
+        evidence_id: str,
+        principal: Annotated[Principal, Depends(get_principal)],
+    ) -> ApprovedEvidence:
+        return await registry_service.get(
+            user_id=principal.user_id,
+            evidence_id=evidence_id,
+        )
+
+    @registry_router.patch(
+        "/api/v1/evidence/{evidence_id}",
+        response_model=ApprovedEvidence,
+    )
+    async def edit_evidence(
+        evidence_id: str,
+        edit: EvidenceRegistryEdit,
+        principal: Annotated[Principal, Depends(get_principal)],
+    ) -> ApprovedEvidence:
+        return await registry_service.edit(
+            user_id=principal.user_id,
+            evidence_id=evidence_id,
+            edit=edit,
+        )
+
+    @registry_router.post(
+        "/api/v1/evidence/{evidence_id}/archive",
+        response_model=ApprovedEvidence,
+    )
+    async def archive_evidence(
+        evidence_id: str,
+        principal: Annotated[Principal, Depends(get_principal)],
+    ) -> ApprovedEvidence:
+        return await registry_service.archive(
+            user_id=principal.user_id,
+            evidence_id=evidence_id,
+        )
+
+    @registry_router.post(
+        "/api/v1/evidence/{evidence_id}/restore",
+        response_model=ApprovedEvidence,
+    )
+    async def restore_evidence(
+        evidence_id: str,
+        principal: Annotated[Principal, Depends(get_principal)],
+    ) -> ApprovedEvidence:
+        return await registry_service.restore(
+            user_id=principal.user_id,
+            evidence_id=evidence_id,
+        )
+
+    router.include_router(registry_router)
     return router
 
 

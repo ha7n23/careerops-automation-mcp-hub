@@ -52,6 +52,7 @@ def create_app(
     app.include_router(
         build_evidence_router(
             service=runtime.evidence_workflow_service,
+            registry_service=runtime.evidence_registry_service,
             token_verifier=token_verifier,
             required_scope=runtime.settings.mcp_required_scope,
         )

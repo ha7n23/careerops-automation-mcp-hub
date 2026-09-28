@@ -8,17 +8,22 @@ PRIMARY_MODEL = "openrouter/nvidia/nemotron-3.5-lightning:free"
 FALLBACK_MODEL = "openrouter/nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free"
 
 APPROVED_MCP_TOOLS = {
+    "archive_registry_evidence",
     "create_application",
     "create_text_evidence_source",
+    "edit_registry_evidence",
     "get_application",
     "get_application_analysis",
     "get_evidence_review",
     "get_pending_actions",
+    "get_registry_evidence",
     "list_applications",
     "list_evidence_documents",
     "list_evidence_reviews",
     "prepare_application",
+    "restore_registry_evidence",
     "review_application",
+    "search_evidence_registry",
     "start_evidence_review",
     "submit_evidence_review",
 }

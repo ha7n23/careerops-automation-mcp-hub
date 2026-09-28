@@ -31,8 +31,13 @@ from careerops_automation_mcp_hub.application.errors import (
     AgentEngineValidationError,
 )
 from careerops_automation_mcp_hub.application.evidence import (
+    ApprovedEvidence,
+    EvidenceCategory,
     EvidenceDocument,
     EvidenceDocumentHistory,
+    EvidenceLifecycleStatus,
+    EvidenceRegistryEdit,
+    EvidenceRegistryPage,
     EvidenceReviewDecision,
     EvidenceReviewHistory,
     EvidenceReviewRun,
@@ -113,6 +118,8 @@ _DOCUMENT_ADAPTER = TypeAdapter(EvidenceDocument)
 _DOCUMENT_HISTORY_ADAPTER = TypeAdapter(EvidenceDocumentHistory)
 _EVIDENCE_REVIEW_ADAPTER = TypeAdapter(EvidenceReviewRun)
 _EVIDENCE_REVIEW_HISTORY_ADAPTER = TypeAdapter(EvidenceReviewHistory)
+_APPROVED_EVIDENCE_ADAPTER = TypeAdapter(ApprovedEvidence)
+_EVIDENCE_REGISTRY_PAGE_ADAPTER = TypeAdapter(EvidenceRegistryPage)
 
 
 class HttpAgentEngineClient:
@@ -244,6 +251,113 @@ class HttpAgentEngineClient:
             user_id=user_id,
             response_adapter=_EVIDENCE_REVIEW_ADAPTER,
             json_payload=decision.model_dump(mode="json"),
+        )
+
+    async def query_evidence_registry(
+        self,
+        *,
+        user_id: str,
+        query: str | None,
+        category: EvidenceCategory | None,
+        lifecycle_status: EvidenceLifecycleStatus,
+        offset: int,
+        limit: int,
+    ) -> EvidenceRegistryPage:
+        """Search, filter and page one user's approved evidence."""
+        query_params: dict[str, str | int] = {
+            "lifecycle_status": lifecycle_status.value,
+            "offset": offset,
+            "limit": limit,
+        }
+
+        if query is not None:
+            query_params["q"] = query
+
+        if category is not None:
+            query_params["category"] = category.value
+
+        return await self._request_json(
+            method="GET",
+            path="/api/v1/evidence",
+            user_id=user_id,
+            response_adapter=_EVIDENCE_REGISTRY_PAGE_ADAPTER,
+            query_params=query_params,
+        )
+
+    async def get_evidence(
+        self,
+        *,
+        user_id: str,
+        evidence_id: str,
+    ) -> ApprovedEvidence:
+        """Retrieve one user-owned approved evidence record."""
+        encoded_evidence_id = quote(evidence_id, safe="")
+
+        return await self._request_json(
+            method="GET",
+            path=f"/api/v1/evidence/{encoded_evidence_id}",
+            user_id=user_id,
+            response_adapter=_APPROVED_EVIDENCE_ADAPTER,
+        )
+
+    async def edit_evidence(
+        self,
+        *,
+        user_id: str,
+        evidence_id: str,
+        edit: EvidenceRegistryEdit,
+    ) -> ApprovedEvidence:
+        """Replace editable fields on one approved evidence record."""
+        encoded_evidence_id = quote(evidence_id, safe="")
+
+        return await self._request_json(
+            method="PATCH",
+            path=f"/api/v1/evidence/{encoded_evidence_id}",
+            user_id=user_id,
+            response_adapter=_APPROVED_EVIDENCE_ADAPTER,
+            json_payload=edit.model_dump(mode="json", exclude_none=True),
+        )
+
+    async def archive_evidence(
+        self,
+        *,
+        user_id: str,
+        evidence_id: str,
+    ) -> ApprovedEvidence:
+        """Archive one approved evidence record idempotently."""
+        return await self._change_evidence_lifecycle(
+            user_id=user_id,
+            evidence_id=evidence_id,
+            action="archive",
+        )
+
+    async def restore_evidence(
+        self,
+        *,
+        user_id: str,
+        evidence_id: str,
+    ) -> ApprovedEvidence:
+        """Restore one approved evidence record idempotently."""
+        return await self._change_evidence_lifecycle(
+            user_id=user_id,
+            evidence_id=evidence_id,
+            action="restore",
+        )
+
+    async def _change_evidence_lifecycle(
+        self,
+        *,
+        user_id: str,
+        evidence_id: str,
+        action: Literal["archive", "restore"],
+    ) -> ApprovedEvidence:
+        encoded_evidence_id = quote(evidence_id, safe="")
+
+        return await self._request_json(
+            method="POST",
+            path=f"/api/v1/evidence/{encoded_evidence_id}/{action}",
+            user_id=user_id,
+            response_adapter=_APPROVED_EVIDENCE_ADAPTER,
         )
 
     async def analyse_job(
