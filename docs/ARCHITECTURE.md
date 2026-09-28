@@ -1,6 +1,8 @@
 # CareerOps Automation & MCP Hub — Architecture
 
-> **Module 2 of CareerOps** — a durable automation and Model Context Protocol (MCP) integration layer that connects deterministic n8n workflows and a constrained OpenClaw assistant to the CareerOps Agent Engine.
+> **Module 2 of CareerOps** — the authenticated REST, durable automation, and
+> Model Context Protocol (MCP) gateway between Module 3 clients and the
+> CareerOps Agent Engine.
 
 ## Architecture summary
 
@@ -8,13 +10,17 @@ CareerOps Module 2 is designed around a simple principle:
 
 **AI may analyse, propose and assist, but durable application state and consequential actions remain explicit, controlled and recoverable.**
 
-The module sits between automation clients and the CareerOps Agent Engine. It exposes business capabilities through MCP, owns the application workflow state in PostgreSQL, coordinates long-running calls to Module 1, and protects human-review boundaries with idempotency, reconciliation and least-privilege tool access.
+The module sits between the Module 3 web application, automation clients, and
+the CareerOps Agent Engine. It exposes the frozen Module 1 workflow through an
+authenticated REST gateway and business capabilities through MCP, owns
+application workflow state in PostgreSQL, and protects human-review boundaries
+with idempotency, reconciliation, and least-privilege access.
 
 At a glance:
 
 ```mermaid
 flowchart LR
-    U[User / Future CareerOps UI]
+    U[User / CareerOps Web UI]
 
     subgraph Clients["Interaction & Automation Clients"]
         N[n8n\nDeterministic Automation]
@@ -22,6 +28,7 @@ flowchart LR
     end
 
     subgraph M2["Module 2 — Automation & MCP Hub"]
+        HTTP[Authenticated REST Gateway]
         MCP[MCP Server\nBusiness Tool Boundary]
         APP[Application Services\nWorkflow Orchestration]
         DOM[Domain Model\nLifecycle & Review Rules]
@@ -35,10 +42,12 @@ flowchart LR
         ER[Evidence Registry]
     end
 
+    U -->|Bearer token| HTTP
+    HTTP --> APP
     U --> N
     U --> O
     N --> MCP
-    O -->|Restricted 7-tool surface| MCP
+    O -->|Restricted 23-tool surface| MCP
     MCP --> APP
     APP --> DOM
     APP --> INF
@@ -58,7 +67,10 @@ flowchart LR
 - OpenClaw integration and least-privilege policy;
 - idempotency and replay protection;
 - failure classification and reconciliation;
-- integration contracts with the CareerOps Agent Engine.
+- integration contracts with the CareerOps Agent Engine;
+- the trusted service-key and user-identity boundary between Modules 3 and 1;
+- evidence ingestion/review, registry management, job-analysis, and final-CV
+  gateway operations;
 
 ### What Module 2 deliberately does not own
 
@@ -66,7 +78,7 @@ flowchart LR
 - employer/job-portal submission;
 - unrestricted agent access to application lifecycle mutations;
 - arbitrary shell, filesystem, process, web or database access for OpenClaw;
-- the future end-user React interface;
+- frontend rendering and client-side interaction state;
 - conversation memory as a source of authoritative business state.
 
 ---
@@ -108,8 +120,8 @@ CareerOps is intentionally split into separate modules with clear responsibiliti
 | Boundary | Responsibility |
 |---|---|
 | **Module 1 — Agent Engine** | Evidence-grounded job analysis, requirement extraction, fit assessment, CV proposal generation, proposal verification and human-review continuation through LangGraph. |
-| **Module 2 — Automation & MCP Hub** | Application workflow state, MCP capabilities, n8n automation, OpenClaw integration, idempotency, reconciliation and cross-module orchestration. |
-| **Module 3 — AI-Native Engineering Workbench** | Planned engineering/development workflow layer covering reusable skills/agents, testing, security, frontend/backend delivery and deployment automation. |
+| **Module 2 — Automation & MCP Hub** | Authenticated gateway, application workflow state, MCP capabilities, n8n automation, OpenClaw integration, idempotency, reconciliation and cross-module orchestration. |
+| **Module 3 — CareerOps Web & AI-Native Workbench** | User-facing web application and delivery workbench; consumes Module 1 only through Module 2. |
 
 Module 2 communicates with Module 1 through an HTTP adapter rather than importing Agent Engine business logic directly. This preserves an explicit service boundary and keeps the two repositories independently testable.
 
@@ -152,7 +164,11 @@ The application layer coordinates use cases such as:
 - reviewing proposals;
 - listing applications;
 - updating valid internal status;
-- retrieving pending actions.
+- retrieving pending actions;
+- ingesting and reviewing evidence sources;
+- searching and managing approved evidence;
+- running/recovering standalone job analysis;
+- generating and retrieving final CV versions.
 
 It depends on ports rather than concrete infrastructure implementations.
 
@@ -209,22 +225,27 @@ This lifecycle is broader than the OpenClaw capability set. For example, the ful
 
 ---
 
-## 5. MCP server as the business capability boundary
+## 5. REST and MCP business capability boundaries
+
+Module 3 uses 18 bearer-authenticated `/api/v1` operations. Module 2 derives
+the CareerOps user from the verified token and privately supplies Module 1's
+service authentication. Browser clients never receive or submit that service
+credential. The frozen inventory and error semantics are documented in
+[`MODULE_2_API_CONTRACT.md`](MODULE_2_API_CONTRACT.md).
 
 The MCP server exposes application-oriented capabilities rather than low-level database or filesystem operations.
 
 ### Full Module 2 MCP tool surface
 
-| Tool | Mutation | Purpose |
+The full server exposes 24 typed tools:
+
+| Capability | Count | Examples |
 |---|---:|---|
-| `create_application` | Yes | Create an internal saved application using an idempotency key. |
-| `prepare_application` | Yes | Coordinate job analysis and CV proposal generation through Module 1. |
-| `get_application_analysis` | No | Recover the current durable Agent Engine analysis without starting or retrying work. |
-| `review_application` | Yes | Apply an explicit human review decision using an idempotency key. |
-| `get_application` | No | Retrieve one application. |
-| `update_application_status` | Yes | Move an application through a valid internal lifecycle transition. |
-| `list_applications` | No | List applications, optionally by status. |
-| `get_pending_actions` | No | Retrieve workflow actions requiring user attention. |
+| Application tracking/orchestration | 8 | `create_application`, `prepare_application`, `review_application`, `get_pending_actions` |
+| Evidence ingestion and review | 6 | `create_text_evidence_source`, `start_evidence_review`, `submit_evidence_review` |
+| Approved Evidence Registry | 5 | `search_evidence_registry`, `edit_registry_evidence`, `archive_registry_evidence` |
+| Standalone job analysis | 3 | `start_job_analysis`, `get_job_analysis`, `review_job_analysis` |
+| Final CV metadata | 2 | `generate_final_cv`, `get_final_cv` |
 
 The server additionally provides human-readable MCP resources for individual application state and pending actions.
 
@@ -286,25 +307,16 @@ This separation allows the future CareerOps frontend to use conversational and d
 
 ## 7. OpenClaw least-privilege design
 
-The full MCP server exposes eight tools. OpenClaw receives exactly seven:
-
-```text
-create_application
-get_application
-get_application_analysis
-get_pending_actions
-list_applications
-prepare_application
-review_application
-```
-
-The excluded tool is:
+The full MCP server exposes 24 tools. OpenClaw receives exactly 23. The
+excluded tool is:
 
 ```text
 update_application_status
 ```
 
-This is deliberate. The conversational assistant does not need a general-purpose lifecycle mutation capability to perform its current role.
+This is deliberate. The conversational assistant does not need a
+general-purpose lifecycle mutation capability. Binary PDF/DOCX upload and
+download also remain REST-only rather than becoming conversational payloads.
 
 ### Effective OpenClaw policy
 
@@ -588,6 +600,12 @@ The HTTP adapter is responsible for transport concerns such as:
 - response validation;
 - transport-to-application error mapping.
 
+It implements the complete frozen Module 1 business boundary: seven evidence
+ingestion/review operations, five registry operations, three job-analysis
+operations, and three final-CV operations. JSON is contract-validated before
+crossing the Module 3 boundary. Artifact downloads additionally validate media
+type, attachment metadata, and non-empty content.
+
 The application services remain written against the port rather than `httpx` directly.
 
 ### Timeout hierarchy
@@ -621,7 +639,10 @@ CAREEROPS_DEV_MCP_ACTOR_ID
 
 This makes local n8n/OpenClaw testing explicit without hard-coding a single client identity into the server script.
 
-The development identity mechanism is not presented as production authentication. The MCP server construction supports authentication/token-verifier integration points, while production identity and authorization remain a deployment concern for the wider CareerOps platform.
+The development identity mechanism is not production authentication. The
+deployed MCP and REST surfaces use a token verifier and required scope. REST
+gateway routes derive the Module 1 user identity from the verified token
+subject; user-supplied identity headers are never trusted.
 
 ---
 
@@ -631,7 +652,8 @@ Security is applied in layers rather than delegated entirely to prompt instructi
 
 ### Capability security
 
-- OpenClaw receives only seven approved MCP tools.
+- OpenClaw receives 23 explicitly allowlisted CareerOps MCP tools and not the
+  full 24-tool server surface.
 - General lifecycle mutation is excluded from its surface.
 - No employer-submission tool exists in the current assistant integration.
 - OpenClaw uses the `minimal` built-in tool profile.
@@ -674,7 +696,7 @@ A representative local development topology is:
 ```mermaid
 flowchart TB
     subgraph Host[Developer Machine]
-        M2[Module 2 MCP Server\n:8001]
+        M2[Module 2 REST + MCP Gateway\n:8001]
         M1[Module 1 Agent Engine\n:8000]
     end
 
@@ -706,9 +728,12 @@ Exercise domain rules and application services without requiring the complete ex
 
 Validate repository and database behaviour around the durable workflow model.
 
-### Agent Engine contract tests
+### Agent Engine and OpenAPI contract tests
 
-Protect the HTTP boundary between Module 2 and Module 1 so request/response expectations do not silently drift.
+Protect the HTTP boundary between Module 2 and Module 1 so request/response
+expectations do not silently drift. A deterministic OpenAPI test freezes all
+18 authenticated Module 3-facing gateway operations and their bearer-security
+requirement.
 
 ### MCP tests
 
@@ -722,7 +747,7 @@ The committed policy has dedicated tests that assert:
 - the approved model catalog contains no `openrouter/auto`;
 - only the CareerOps skill is selected;
 - the tool profile remains `minimal`;
-- the MCP server exposes the exact approved seven-tool OpenClaw subset;
+- the MCP server exposes the exact approved 23-tool OpenClaw subset;
 - `update_application_status` remains excluded;
 - the expected timeout policy remains intact.
 
@@ -732,7 +757,7 @@ At the final OpenClaw hardening checkpoint, the repository passed:
 Ruff format       ✓
 Ruff lint         ✓
 mypy              ✓
-pytest             202 passed
+pytest             225 passed
 Compose validation ✓
 OpenClaw secrets   clean
 ```
@@ -746,7 +771,7 @@ The integration was exercised through the real local stack rather than only thro
 A representative OpenClaw path demonstrated:
 
 1. OpenClaw connected to Module 2 over Streamable HTTP MCP.
-2. Only the approved seven namespaced tools were available.
+2. Only the then-approved namespaced application tools were available.
 3. A synthetic application was created and re-read from durable state.
 4. OpenClaw prepared the application exactly once using a supplied job description.
 5. Module 2 persisted preparation state and called the real Module 1 Agent Engine.
@@ -758,6 +783,22 @@ A representative OpenClaw path demonstrated:
 11. The blocked proposal was excluded from the approval set.
 12. Module 1 completed the review continuation.
 13. Module 2 reconciled the application to `ready_to_apply` and the analysis to an approved/completed state.
+
+The contract-freeze slice adds a focused opt-in proof script for the remaining
+gateway surface. With one trusted synthetic PDF/DOCX and a fresh user it:
+
+1. uploads and reviews evidence through Module 2;
+2. verifies registry visibility;
+3. archives every approved item and proves both default-query and job-grounding
+   exclusion;
+4. restores the evidence and proves it becomes usable by job analysis again;
+5. completes explicit human CV-proposal review;
+6. generates verified DOCX/PDF artifacts and proves retry reuse;
+7. downloads and signature-checks both artifacts;
+8. proves cross-user evidence, analysis, and CV retrieval is blocked.
+
+This proof is deliberately run manually against the real Module 1 document and
+LLM stack rather than on every CI run.
 
 This validates the intended chain:
 
@@ -821,17 +862,18 @@ flowchart LR
     GW[Assistant / Application Gateway]
     OC[OpenClaw CareerOps Assistant]
     N[n8n Automations]
-    MCP[Module 2 MCP Hub]
+    HUB[Module 2 REST + MCP Hub]
     M1[Module 1 Agent Engine]
     DB[(CareerOps Durable State)]
 
+    UI -->|Authenticated REST| HUB
     UI --> GW
     GW --> OC
     GW --> N
-    OC --> MCP
-    N --> MCP
-    MCP --> M1
-    MCP --> DB
+    OC --> HUB
+    N --> HUB
+    HUB --> M1
+    HUB --> DB
 ```
 
 Potential later extensions include:

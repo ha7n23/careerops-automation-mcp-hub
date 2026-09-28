@@ -4,7 +4,14 @@
 
 **A secure automation and Model Context Protocol (MCP) integration layer for CareerOps, connecting deterministic n8n workflows and a conversational OpenClaw assistant to an evidence-grounded AI application engine.**
 
-This repository is **Module 2 of the CareerOps platform**. It sits between user-facing automation clients and the CareerOps Agent Engine, providing durable application lifecycle management, MCP-native tools, human-in-the-loop review, failure reconciliation, and least-privilege AI assistant access.
+This repository is **Module 2 of the CareerOps platform**. It sits between the
+Module 3 web application, automation clients, and the CareerOps Agent Engine.
+It provides an authenticated REST gateway, durable application lifecycle
+management, MCP-native tools, human-in-the-loop review, failure reconciliation,
+and least-privilege AI assistant access.
+
+The stable Module 3 integration boundary is documented in
+[the Module 2 API contract](docs/MODULE_2_API_CONTRACT.md).
 
 > **Key idea:** AI can analyse, prepare and propose — but consequential career actions remain controlled, explicit and recoverable.
 
@@ -27,7 +34,7 @@ This repository is **Module 2 of the CareerOps platform**. It sits between user-
 
 ```mermaid
 flowchart LR
-    U[User / Future CareerOps UI]
+    U[User / CareerOps Web UI]
 
     subgraph Clients
         N[n8n Automation]
@@ -35,6 +42,7 @@ flowchart LR
     end
 
     subgraph Module2["Module 2 — Automation & MCP Hub"]
+        H[Authenticated REST Gateway]
         M[MCP Server]
         A[Application Services]
         D[Domain / Lifecycle Rules]
@@ -46,6 +54,8 @@ flowchart LR
         R[Evidence Registry]
     end
 
+    U -->|Bearer-authenticated API| H
+    H --> A
     U --> N
     U --> O
 
@@ -103,20 +113,23 @@ Likewise, approving CV proposals means approving the internal CareerOps review r
 
 ---
 
-## MCP capabilities
+## Gateway and MCP capabilities
+
+Module 3 uses 18 authenticated `/api/v1` operations covering evidence
+ingestion and review, the approved Evidence Registry, job analysis, and final
+DOCX/PDF generation. The browser supplies a bearer token to Module 2; the
+Module 1 service credential remains server-side.
 
 The underlying CareerOps MCP server provides business-oriented tools for:
 
-| Capability                  | Purpose                                           |
-| --------------------------- | ------------------------------------------------- |
-| `create_application`        | Create a saved internal CareerOps application     |
-| `prepare_application`       | Run the Agent Engine preparation workflow         |
-| `get_application_analysis`  | Recover durable AI analysis without restarting it |
-| `review_application`        | Apply an explicit human review decision           |
-| `get_application`           | Retrieve one application                          |
-| `list_applications`         | Retrieve application state                        |
-| `get_pending_actions`       | Surface actions requiring attention               |
-| `update_application_status` | Perform valid internal lifecycle transitions      |
+| Capability | Representative tools |
+|---|---|
+| Application tracking | `create_application`, `prepare_application`, `get_application_analysis`, `review_application` |
+| Evidence ingestion/review | `create_text_evidence_source`, `start_evidence_review`, `get_evidence_review`, `submit_evidence_review` |
+| Evidence Registry | `search_evidence_registry`, `get_registry_evidence`, `edit_registry_evidence`, `archive_registry_evidence`, `restore_registry_evidence` |
+| Standalone analysis | `start_job_analysis`, `get_job_analysis`, `review_job_analysis` |
+| Final CV | `generate_final_cv`, `get_final_cv` |
+| General application lifecycle | `get_application`, `list_applications`, `get_pending_actions`, `update_application_status` |
 
 The server also exposes human-readable MCP resources for application and pending-action context.
 
@@ -124,19 +137,10 @@ The server also exposes human-readable MCP resources for application and pending
 
 OpenClaw does **not** receive the complete MCP capability set.
 
-Its policy exposes only:
-
-```text
-create_application
-get_application
-get_application_analysis
-get_pending_actions
-list_applications
-prepare_application
-review_application
-```
-
-`update_application_status` is deliberately excluded.
+Its policy exposes 23 CareerOps business tools covering the capabilities above,
+except `update_application_status`, which is deliberately excluded. PDF/DOCX
+upload and binary artifact download remain authenticated REST operations rather
+than conversational tool payloads.
 
 OpenClaw also uses the `minimal` built-in tool profile and receives no arbitrary shell, process, filesystem, web or direct database capability from this integration.
 
@@ -259,7 +263,7 @@ Human review
 Durable PostgreSQL state
 ```
 
-The verified flow included:
+The earlier verified application-orchestration flow included:
 
 * creating an application through OpenClaw
 * retrieving durable application state
@@ -273,7 +277,10 @@ The verified flow included:
 * reconciling final durable state
 * reaching `ready_to_apply`
 
-The final controlled review completed with the blocked proposal still excluded from the approved set.
+The final controlled review completed with the blocked proposal still excluded
+from the approved set. The final contract-freeze slice also provides an opt-in
+cross-service proof for evidence lifecycle, restored grounding, final-CV
+artifacts, retry reuse, and cross-user isolation.
 
 ---
 
@@ -427,7 +434,25 @@ docker compose -f openclaw/compose.yaml \
   mcp probe careerops --json
 ```
 
-The expected OpenClaw surface is exactly seven CareerOps business tools.
+The expected OpenClaw surface is exactly 23 CareerOps business tools.
+
+## Final cross-service proof
+
+After Module 1 is healthy, run:
+
+```bash
+uv run --env-file .env python scripts/prove_module1_gateway.py
+```
+
+Optionally set `CAREEROPS_LIVE_JOB_DESCRIPTION` to align the proof job with the
+evidence text, or `CAREEROPS_LIVE_EVIDENCE_TEXT` to replace the deterministic
+skills fixture. The script uses a fresh user and verifies ingestion, review,
+registry lifecycle, archived-evidence exclusion, restored grounding, optional
+human job review and final DOCX/PDF handling when proposals are reviewable,
+deterministic safety blocking otherwise, and cross-user
+isolation. Module 1 already owns the separate live DOCX/PDF document proofs;
+this script focuses on the real cross-service gateway and is therefore not part
+of normal CI.
 
 ---
 
@@ -448,7 +473,7 @@ The latest Module 2 validation passed:
 Ruff format       ✓
 Ruff lint         ✓
 mypy              ✓
-pytest            202 passed
+pytest            225 passed
 Compose validation ✓
 OpenClaw secrets   clean
 ```
@@ -484,8 +509,9 @@ Evidence-grounded job analysis, LangChain/LangGraph workflows, LangSmith observa
 **Module 2 — Automation & MCP Hub**
 This repository. Durable application operations, MCP integration, n8n workflows and the OpenClaw conversational assistant.
 
-**Module 3 — AI-Native Engineering Workbench**
-Planned development and delivery layer covering reusable engineering agents/skills, testing, security, frontend/backend workflows and deployment automation.
+**Module 3 — CareerOps Web & AI-Native Workbench**
+The user-facing web application and delivery workbench. It consumes Module 1
+only through Module 2's authenticated gateway.
 
 The modules are separate engineering boundaries but are designed to operate together as one CareerOps platform.
 
@@ -503,7 +529,7 @@ Not currently implemented here:
 * paid OpenRouter model fallback
 * BYOK model configuration
 * messaging-channel integrations
-* production frontend integration
+* production deployment and hosted frontend integration
 
 These boundaries are deliberate rather than missing shortcuts.
 
