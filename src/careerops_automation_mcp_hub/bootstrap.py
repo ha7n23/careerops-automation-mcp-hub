@@ -16,6 +16,9 @@ from careerops_automation_mcp_hub.application.services.evidence_workflow import 
 from careerops_automation_mcp_hub.application.services.get_application_analysis import (
     GetApplicationAnalysisService,
 )
+from careerops_automation_mcp_hub.application.services.job_cv_gateway import (
+    JobCVGatewayService,
+)
 from careerops_automation_mcp_hub.application.services.prepare_application import (
     PrepareApplicationService,
 )
@@ -58,6 +61,7 @@ class CareerOpsRuntime:
     get_application_analysis_service: GetApplicationAnalysisService
     evidence_workflow_service: EvidenceWorkflowService
     evidence_registry_service: EvidenceRegistryService
+    job_cv_gateway_service: JobCVGatewayService
 
     def build_mcp_server_for_principal(
         self,
@@ -111,6 +115,7 @@ class CareerOpsRuntime:
             get_application_analysis_service=self.get_application_analysis_service,
             evidence_workflow_service=self.evidence_workflow_service,
             evidence_registry_service=self.evidence_registry_service,
+            job_cv_gateway_service=self.job_cv_gateway_service,
             token_verifier=token_verifier,
             auth=auth,
         )
@@ -173,6 +178,7 @@ def create_runtime(
 
     evidence_workflow_service = EvidenceWorkflowService(agent_engine_client)
     evidence_registry_service = EvidenceRegistryService(agent_engine_client)
+    job_cv_gateway_service = JobCVGatewayService(agent_engine_client)
 
     return CareerOpsRuntime(
         settings=resolved_settings,
@@ -185,4 +191,5 @@ def create_runtime(
         get_application_analysis_service=get_application_analysis_service,
         evidence_workflow_service=evidence_workflow_service,
         evidence_registry_service=evidence_registry_service,
+        job_cv_gateway_service=job_cv_gateway_service,
     )

@@ -18,6 +18,16 @@ from careerops_automation_mcp_hub.application.evidence import (
     EvidenceReviewHistory,
     EvidenceReviewRun,
 )
+from careerops_automation_mcp_hub.application.final_cv import (
+    CVVersionMetadata,
+    FinalCVGenerationRequest,
+    FinalCVVersion,
+)
+from careerops_automation_mcp_hub.application.job_analysis import (
+    JobAnalysisReviewDecision,
+    JobAnalysisRun,
+    JobAnalysisStartRequest,
+)
 from careerops_automation_mcp_hub.application.ports.unit_of_work import (
     ApplicationUnitOfWorkFactory,
 )
@@ -42,6 +52,9 @@ from careerops_automation_mcp_hub.application.services.get_application_analysis 
 from careerops_automation_mcp_hub.application.services.get_pending_actions import (
     GetPendingActionsQuery,
     GetPendingActionsService,
+)
+from careerops_automation_mcp_hub.application.services.job_cv_gateway import (
+    JobCVGatewayService,
 )
 from careerops_automation_mcp_hub.application.services.list_applications import (
     ListApplicationsQuery,
@@ -88,6 +101,7 @@ def build_mcp_server(
     get_application_analysis_service: GetApplicationAnalysisService,
     evidence_workflow_service: EvidenceWorkflowService | None = None,
     evidence_registry_service: EvidenceRegistryService | None = None,
+    job_cv_gateway_service: JobCVGatewayService | None = None,
     token_verifier: TokenVerifier | None = None,
     auth: AuthSettings | None = None,
 ) -> MCPServer:
@@ -582,6 +596,110 @@ def build_mcp_server(
             return await registry_service.restore(
                 user_id=principal.user_id,
                 evidence_id=evidence_id,
+            )
+
+    if job_cv_gateway_service is not None:
+        job_cv_service = job_cv_gateway_service
+
+        @mcp.tool(
+            annotations=ToolAnnotations(
+                read_only_hint=False,
+                destructive_hint=False,
+                idempotent_hint=False,
+                open_world_hint=False,
+            )
+        )
+        async def start_job_analysis(
+            job_id: str,
+            job_description: str,
+        ) -> JobAnalysisRun:
+            """Start a standalone evidence-grounded durable job analysis."""
+            principal = principal_provider.get_principal()
+
+            return await job_cv_service.start_analysis(
+                user_id=principal.user_id,
+                request=JobAnalysisStartRequest(
+                    job_id=job_id,
+                    job_description=job_description,
+                ),
+            )
+
+        @mcp.tool(
+            annotations=ToolAnnotations(
+                read_only_hint=True,
+                open_world_hint=False,
+            )
+        )
+        async def get_job_analysis(
+            thread_id: str,
+        ) -> JobAnalysisRun:
+            """Recover one standalone durable job-analysis workflow."""
+            principal = principal_provider.get_principal()
+
+            return await job_cv_service.recover_analysis(
+                user_id=principal.user_id,
+                thread_id=thread_id,
+            )
+
+        @mcp.tool(
+            annotations=ToolAnnotations(
+                read_only_hint=False,
+                destructive_hint=False,
+                idempotent_hint=False,
+                open_world_hint=False,
+            )
+        )
+        async def review_job_analysis(
+            thread_id: str,
+            decision: JobAnalysisReviewDecision,
+        ) -> JobAnalysisRun:
+            """Submit an explicit human decision to a paused job analysis."""
+            principal = principal_provider.get_principal()
+
+            return await job_cv_service.review_analysis(
+                user_id=principal.user_id,
+                thread_id=thread_id,
+                decision=decision,
+            )
+
+        @mcp.tool(
+            annotations=ToolAnnotations(
+                read_only_hint=False,
+                destructive_hint=False,
+                idempotent_hint=True,
+                open_world_hint=False,
+            )
+        )
+        async def generate_final_cv(
+            thread_id: str,
+            source_document_id: str,
+        ) -> FinalCVVersion:
+            """Generate or recover verified DOCX and PDF CV artifacts."""
+            principal = principal_provider.get_principal()
+
+            return await job_cv_service.generate_final_cv(
+                user_id=principal.user_id,
+                request=FinalCVGenerationRequest(
+                    thread_id=thread_id,
+                    source_document_id=source_document_id,
+                ),
+            )
+
+        @mcp.tool(
+            annotations=ToolAnnotations(
+                read_only_hint=True,
+                open_world_hint=False,
+            )
+        )
+        async def get_final_cv(
+            cv_version_id: str,
+        ) -> CVVersionMetadata:
+            """Retrieve safe metadata for one generated final CV."""
+            principal = principal_provider.get_principal()
+
+            return await job_cv_service.get_final_cv(
+                user_id=principal.user_id,
+                cv_version_id=cv_version_id,
             )
 
     @mcp.resource(

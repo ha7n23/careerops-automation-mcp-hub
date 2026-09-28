@@ -16,6 +16,18 @@ from careerops_automation_mcp_hub.application.evidence import (
     EvidenceReviewHistory,
     EvidenceReviewRun,
 )
+from careerops_automation_mcp_hub.application.final_cv import (
+    CVArtifactDownload,
+    CVArtifactFormat,
+    CVVersionMetadata,
+    FinalCVGenerationRequest,
+    FinalCVVersion,
+)
+from careerops_automation_mcp_hub.application.job_analysis import (
+    JobAnalysisReviewDecision,
+    JobAnalysisRun,
+    JobAnalysisStartRequest,
+)
 
 
 class AgentEngineClient(Protocol):
@@ -165,4 +177,60 @@ class AgentEngineClient(Protocol):
         evidence_id: str,
     ) -> ApprovedEvidence:
         """Restore one approved evidence record idempotently."""
+        ...
+
+    async def start_job_analysis(
+        self,
+        *,
+        user_id: str,
+        request: JobAnalysisStartRequest,
+    ) -> JobAnalysisRun:
+        """Start one full-contract durable job analysis."""
+        ...
+
+    async def recover_job_analysis(
+        self,
+        *,
+        user_id: str,
+        thread_id: str,
+    ) -> JobAnalysisRun:
+        """Recover one full-contract durable job analysis."""
+        ...
+
+    async def submit_job_analysis_review(
+        self,
+        *,
+        user_id: str,
+        thread_id: str,
+        decision: JobAnalysisReviewDecision,
+    ) -> JobAnalysisRun:
+        """Submit a human decision to one paused job analysis."""
+        ...
+
+    async def generate_final_cv(
+        self,
+        *,
+        user_id: str,
+        request: FinalCVGenerationRequest,
+    ) -> FinalCVVersion:
+        """Generate or recover one verified final CV version."""
+        ...
+
+    async def get_final_cv(
+        self,
+        *,
+        user_id: str,
+        cv_version_id: str,
+    ) -> CVVersionMetadata:
+        """Retrieve safe metadata for one final CV version."""
+        ...
+
+    async def download_final_cv_artifact(
+        self,
+        *,
+        user_id: str,
+        cv_version_id: str,
+        artifact_format: CVArtifactFormat,
+    ) -> CVArtifactDownload:
+        """Download one verified DOCX or PDF final-CV artifact."""
         ...
