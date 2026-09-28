@@ -1,11 +1,21 @@
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 from mcp.server.auth.provider import TokenVerifier
 from sqlalchemy.exc import SQLAlchemyError
 
+from careerops_automation_mcp_hub.api.evidence import build_evidence_router
+from careerops_automation_mcp_hub.application.errors import (
+    AgentEngineAuthenticationError,
+    AgentEngineConflictError,
+    AgentEngineContractError,
+    AgentEngineNotFoundError,
+    AgentEngineRequestError,
+    AgentEngineUnavailableError,
+    AgentEngineValidationError,
+)
 from careerops_automation_mcp_hub.bootstrap import create_runtime
 from careerops_automation_mcp_hub.core.config import Settings
 
@@ -38,6 +48,61 @@ def create_app(
         version="0.1.0",
         lifespan=lifespan,
     )
+
+    app.include_router(
+        build_evidence_router(
+            service=runtime.evidence_workflow_service,
+            token_verifier=token_verifier,
+            required_scope=runtime.settings.mcp_required_scope,
+        )
+    )
+
+    @app.exception_handler(AgentEngineNotFoundError)
+    async def agent_engine_not_found(
+        _: Request,
+        exc: AgentEngineNotFoundError,
+    ) -> JSONResponse:
+        return JSONResponse(status_code=404, content={"detail": exc.detail})
+
+    @app.exception_handler(AgentEngineConflictError)
+    async def agent_engine_conflict(
+        _: Request,
+        exc: AgentEngineConflictError,
+    ) -> JSONResponse:
+        return JSONResponse(status_code=409, content={"detail": exc.detail})
+
+    @app.exception_handler(AgentEngineValidationError)
+    async def agent_engine_validation(
+        _: Request,
+        exc: AgentEngineValidationError,
+    ) -> JSONResponse:
+        return JSONResponse(status_code=422, content={"detail": exc.detail})
+
+    @app.exception_handler(AgentEngineUnavailableError)
+    async def agent_engine_unavailable(
+        _: Request,
+        __: AgentEngineUnavailableError,
+    ) -> JSONResponse:
+        return JSONResponse(
+            status_code=503,
+            content={"detail": "The Agent Engine is temporarily unavailable."},
+        )
+
+    @app.exception_handler(AgentEngineAuthenticationError)
+    @app.exception_handler(AgentEngineContractError)
+    @app.exception_handler(AgentEngineRequestError)
+    async def agent_engine_gateway_failure(
+        _: Request,
+        __: (
+            AgentEngineAuthenticationError
+            | AgentEngineContractError
+            | AgentEngineRequestError
+        ),
+    ) -> JSONResponse:
+        return JSONResponse(
+            status_code=502,
+            content={"detail": "The Agent Engine returned an invalid response."},
+        )
 
     @app.get("/health")
     async def health() -> dict[str, str]:

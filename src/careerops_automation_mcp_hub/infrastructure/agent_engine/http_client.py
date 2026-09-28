@@ -1,4 +1,4 @@
-from typing import Annotated, Literal, NoReturn, TypeVar
+from typing import Annotated, Any, Literal, NoReturn, TypeVar
 from urllib.parse import quote
 
 import httpx
@@ -29,6 +29,13 @@ from careerops_automation_mcp_hub.application.errors import (
     AgentEngineRequestError,
     AgentEngineUnavailableError,
     AgentEngineValidationError,
+)
+from careerops_automation_mcp_hub.application.evidence import (
+    EvidenceDocument,
+    EvidenceDocumentHistory,
+    EvidenceReviewDecision,
+    EvidenceReviewHistory,
+    EvidenceReviewRun,
 )
 
 
@@ -102,6 +109,10 @@ _RESPONSE_ADAPTER: TypeAdapter[_AwaitingReviewPayload | _CompletedPayload] = (
 
 _ResponseT = TypeVar("_ResponseT")
 _HttpMethod = Literal["GET", "POST", "PATCH"]
+_DOCUMENT_ADAPTER = TypeAdapter(EvidenceDocument)
+_DOCUMENT_HISTORY_ADAPTER = TypeAdapter(EvidenceDocumentHistory)
+_EVIDENCE_REVIEW_ADAPTER = TypeAdapter(EvidenceReviewRun)
+_EVIDENCE_REVIEW_HISTORY_ADAPTER = TypeAdapter(EvidenceReviewHistory)
 
 
 class HttpAgentEngineClient:
@@ -118,6 +129,122 @@ class HttpAgentEngineClient:
 
         self._client = client
         self._service_key = service_key
+
+    async def list_evidence_documents(
+        self,
+        *,
+        user_id: str,
+        limit: int,
+    ) -> EvidenceDocumentHistory:
+        """List one user's bounded Module 1 evidence-source history."""
+        return await self._request_json(
+            method="GET",
+            path="/api/v1/cv-documents",
+            user_id=user_id,
+            response_adapter=_DOCUMENT_HISTORY_ADAPTER,
+            query_params={"limit": limit},
+        )
+
+    async def upload_evidence_document(
+        self,
+        *,
+        user_id: str,
+        filename: str,
+        media_type: str,
+        data: bytes,
+    ) -> EvidenceDocument:
+        """Upload one PDF or DOCX evidence source to Module 1."""
+        return await self._request_json(
+            method="POST",
+            path="/api/v1/cv-documents",
+            user_id=user_id,
+            response_adapter=_DOCUMENT_ADAPTER,
+            files={"file": (filename, data, media_type)},
+        )
+
+    async def create_text_evidence_source(
+        self,
+        *,
+        user_id: str,
+        title: str,
+        content: str,
+    ) -> EvidenceDocument:
+        """Create one pasted-text evidence source in Module 1."""
+        return await self._request_json(
+            method="POST",
+            path="/api/v1/cv-documents/text",
+            user_id=user_id,
+            response_adapter=_DOCUMENT_ADAPTER,
+            json_payload={
+                "title": title,
+                "content": content,
+            },
+        )
+
+    async def start_evidence_review(
+        self,
+        *,
+        user_id: str,
+        document_id: str,
+    ) -> EvidenceReviewRun:
+        """Start or recover evidence extraction and review."""
+        encoded_document_id = quote(document_id, safe="")
+
+        return await self._request_json(
+            method="POST",
+            path=(f"/api/v1/cv-documents/{encoded_document_id}/evidence-review"),
+            user_id=user_id,
+            response_adapter=_EVIDENCE_REVIEW_ADAPTER,
+        )
+
+    async def list_evidence_reviews(
+        self,
+        *,
+        user_id: str,
+        limit: int,
+    ) -> EvidenceReviewHistory:
+        """List one user's bounded Module 1 evidence-review history."""
+        return await self._request_json(
+            method="GET",
+            path="/api/v1/cv-evidence-reviews",
+            user_id=user_id,
+            response_adapter=_EVIDENCE_REVIEW_HISTORY_ADAPTER,
+            query_params={"limit": limit},
+        )
+
+    async def get_evidence_review(
+        self,
+        *,
+        user_id: str,
+        review_run_id: str,
+    ) -> EvidenceReviewRun:
+        """Recover one durable Module 1 evidence-review run."""
+        encoded_review_run_id = quote(review_run_id, safe="")
+
+        return await self._request_json(
+            method="GET",
+            path=f"/api/v1/cv-evidence-reviews/{encoded_review_run_id}",
+            user_id=user_id,
+            response_adapter=_EVIDENCE_REVIEW_ADAPTER,
+        )
+
+    async def submit_evidence_review(
+        self,
+        *,
+        user_id: str,
+        review_run_id: str,
+        decision: EvidenceReviewDecision,
+    ) -> EvidenceReviewRun:
+        """Submit a complete human evidence decision to Module 1."""
+        encoded_review_run_id = quote(review_run_id, safe="")
+
+        return await self._request_json(
+            method="POST",
+            path=f"/api/v1/cv-evidence-reviews/{encoded_review_run_id}/review",
+            user_id=user_id,
+            response_adapter=_EVIDENCE_REVIEW_ADAPTER,
+            json_payload=decision.model_dump(mode="json"),
+        )
 
     async def analyse_job(
         self,
@@ -203,6 +330,8 @@ class HttpAgentEngineClient:
         user_id: str,
         response_adapter: TypeAdapter[_ResponseT],
         json_payload: dict[str, object] | None = None,
+        query_params: dict[str, str | int] | None = None,
+        files: dict[str, tuple[str, bytes, str]] | None = None,
         not_found_error: type[AgentEngineNotFoundError] = AgentEngineNotFoundError,
     ) -> _ResponseT:
         response = await self._request(
@@ -210,6 +339,8 @@ class HttpAgentEngineClient:
             path=path,
             user_id=user_id,
             json_payload=json_payload,
+            query_params=query_params,
+            files=files,
             not_found_error=not_found_error,
         )
 
@@ -234,6 +365,8 @@ class HttpAgentEngineClient:
         path: str,
         user_id: str,
         json_payload: dict[str, object] | None = None,
+        query_params: dict[str, str | int] | None = None,
+        files: dict[str, tuple[str, bytes, str]] | None = None,
         not_found_error: type[AgentEngineNotFoundError] = AgentEngineNotFoundError,
     ) -> httpx.Response:
         headers = {
@@ -241,20 +374,25 @@ class HttpAgentEngineClient:
             "X-User-ID": user_id,
         }
 
+        request_options: dict[str, Any] = {
+            "headers": headers,
+        }
+
+        if json_payload is not None:
+            request_options["json"] = json_payload
+
+        if query_params is not None:
+            request_options["params"] = query_params
+
+        if files is not None:
+            request_options["files"] = files
+
         try:
-            if json_payload is None:
-                response = await self._client.request(
-                    method,
-                    path,
-                    headers=headers,
-                )
-            else:
-                response = await self._client.request(
-                    method,
-                    path,
-                    headers=headers,
-                    json=json_payload,
-                )
+            response = await self._client.request(
+                method,
+                path,
+                **request_options,
+            )
         except httpx.TimeoutException as exc:
             raise AgentEngineUnavailableError(
                 "Agent Engine request timed out."

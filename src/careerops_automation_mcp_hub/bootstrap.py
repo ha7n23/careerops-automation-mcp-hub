@@ -7,6 +7,9 @@ from mcp.server.auth.settings import AuthSettings
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncEngine
 
+from careerops_automation_mcp_hub.application.services.evidence_workflow import (
+    EvidenceWorkflowService,
+)
 from careerops_automation_mcp_hub.application.services.get_application_analysis import (
     GetApplicationAnalysisService,
 )
@@ -50,6 +53,7 @@ class CareerOpsRuntime:
     prepare_application_service: PrepareApplicationService
     review_application_service: ReviewApplicationService
     get_application_analysis_service: GetApplicationAnalysisService
+    evidence_workflow_service: EvidenceWorkflowService
 
     def build_mcp_server_for_principal(
         self,
@@ -101,6 +105,7 @@ class CareerOpsRuntime:
             prepare_application_service=self.prepare_application_service,
             review_application_service=self.review_application_service,
             get_application_analysis_service=self.get_application_analysis_service,
+            evidence_workflow_service=self.evidence_workflow_service,
             token_verifier=token_verifier,
             auth=auth,
         )
@@ -161,6 +166,8 @@ def create_runtime(
         agent_engine_client,
     )
 
+    evidence_workflow_service = EvidenceWorkflowService(agent_engine_client)
+
     return CareerOpsRuntime(
         settings=resolved_settings,
         engine=engine,
@@ -170,4 +177,5 @@ def create_runtime(
         prepare_application_service=prepare_application_service,
         review_application_service=review_application_service,
         get_application_analysis_service=get_application_analysis_service,
+        evidence_workflow_service=evidence_workflow_service,
     )

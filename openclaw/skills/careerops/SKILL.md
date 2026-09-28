@@ -53,6 +53,28 @@ Use a fresh idempotency key for each intentional review round.
 
 If a review result is ambiguous, recover durable state before considering another review call. Do not blindly resubmit the same consequential action.
 
+### Evidence ingestion and approval
+
+Use \`careerops__create_text_evidence_source\` only when the user clearly asks
+to add pasted career information. Creating a source does not approve it.
+
+Use \`careerops__list_evidence_documents\` and
+\`careerops__list_evidence_reviews\` to recover durable workflow history.
+Before an evidence decision, call \`careerops__get_evidence_review\`.
+
+Use \`careerops__start_evidence_review\` to start or recover extraction for an
+existing source. Starting the same source again is a recovery operation.
+
+Evidence approval, rejection, editing, and duplicate resolution require clear
+user intent. Submit a complete decision through
+\`careerops__submit_evidence_review\`; classify every proposal exactly once and
+resolve every reported overlap using only the actions and target identifiers
+returned by the current review.
+
+If submission is ambiguous, recover the review before retrying. Never infer
+approval, silently accept a duplicate, or turn pasted text directly into
+approved evidence.
+
 ### Evidence and safety
 
 Never invent CV evidence, employment history, education, skills, achievements, metrics, qualifications, or experience.
