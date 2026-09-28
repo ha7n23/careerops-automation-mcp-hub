@@ -9,12 +9,18 @@ FALLBACK_MODEL = "openrouter/nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free"
 
 APPROVED_MCP_TOOLS = {
     "create_application",
+    "create_text_evidence_source",
     "get_application",
     "get_application_analysis",
+    "get_evidence_review",
     "get_pending_actions",
     "list_applications",
+    "list_evidence_documents",
+    "list_evidence_reviews",
     "prepare_application",
     "review_application",
+    "start_evidence_review",
+    "submit_evidence_review",
 }
 
 

@@ -6,12 +6,22 @@ from mcp.server.auth.provider import TokenVerifier
 from mcp.server.auth.settings import AuthSettings
 from mcp.types import ToolAnnotations
 
+from careerops_automation_mcp_hub.application.evidence import (
+    EvidenceDocument,
+    EvidenceDocumentHistory,
+    EvidenceReviewDecision,
+    EvidenceReviewHistory,
+    EvidenceReviewRun,
+)
 from careerops_automation_mcp_hub.application.ports.unit_of_work import (
     ApplicationUnitOfWorkFactory,
 )
 from careerops_automation_mcp_hub.application.services.create_application import (
     CreateApplicationCommand,
     CreateApplicationService,
+)
+from careerops_automation_mcp_hub.application.services.evidence_workflow import (
+    EvidenceWorkflowService,
 )
 from careerops_automation_mcp_hub.application.services.get_application import (
     GetApplicationQuery,
@@ -68,6 +78,7 @@ def build_mcp_server(
     prepare_application_service: PrepareApplicationService,
     review_application_service: ReviewApplicationService,
     get_application_analysis_service: GetApplicationAnalysisService,
+    evidence_workflow_service: EvidenceWorkflowService | None = None,
     token_verifier: TokenVerifier | None = None,
     auth: AuthSettings | None = None,
 ) -> MCPServer:
@@ -342,6 +353,121 @@ def build_mcp_server(
             actions=summaries,
             count=len(summaries),
         )
+
+    if evidence_workflow_service is not None:
+        evidence_service = evidence_workflow_service
+
+        @mcp.tool(
+            annotations=ToolAnnotations(
+                read_only_hint=True,
+                open_world_hint=False,
+            )
+        )
+        async def list_evidence_documents(
+            limit: int = 100,
+        ) -> EvidenceDocumentHistory:
+            """List the current user's durable evidence-source history."""
+            principal = principal_provider.get_principal()
+
+            return await evidence_service.list_documents(
+                user_id=principal.user_id,
+                limit=limit,
+            )
+
+        @mcp.tool(
+            annotations=ToolAnnotations(
+                read_only_hint=False,
+                destructive_hint=False,
+                idempotent_hint=False,
+                open_world_hint=False,
+            )
+        )
+        async def create_text_evidence_source(
+            title: str,
+            content: str,
+        ) -> EvidenceDocument:
+            """Create a pasted-text source without approving it as evidence."""
+            principal = principal_provider.get_principal()
+
+            return await evidence_service.create_text_source(
+                user_id=principal.user_id,
+                title=title,
+                content=content,
+            )
+
+        @mcp.tool(
+            annotations=ToolAnnotations(
+                read_only_hint=False,
+                destructive_hint=False,
+                idempotent_hint=True,
+                open_world_hint=False,
+            )
+        )
+        async def start_evidence_review(
+            document_id: str,
+        ) -> EvidenceReviewRun:
+            """Start or recover extraction and review for one evidence source."""
+            principal = principal_provider.get_principal()
+
+            return await evidence_service.start_review(
+                user_id=principal.user_id,
+                document_id=document_id,
+            )
+
+        @mcp.tool(
+            annotations=ToolAnnotations(
+                read_only_hint=True,
+                open_world_hint=False,
+            )
+        )
+        async def list_evidence_reviews(
+            limit: int = 100,
+        ) -> EvidenceReviewHistory:
+            """List the current user's durable evidence-review history."""
+            principal = principal_provider.get_principal()
+
+            return await evidence_service.list_reviews(
+                user_id=principal.user_id,
+                limit=limit,
+            )
+
+        @mcp.tool(
+            annotations=ToolAnnotations(
+                read_only_hint=True,
+                open_world_hint=False,
+            )
+        )
+        async def get_evidence_review(
+            review_run_id: str,
+        ) -> EvidenceReviewRun:
+            """Recover one evidence-review run before a decision."""
+            principal = principal_provider.get_principal()
+
+            return await evidence_service.get_review(
+                user_id=principal.user_id,
+                review_run_id=review_run_id,
+            )
+
+        @mcp.tool(
+            annotations=ToolAnnotations(
+                read_only_hint=False,
+                destructive_hint=False,
+                idempotent_hint=True,
+                open_world_hint=False,
+            )
+        )
+        async def submit_evidence_review(
+            review_run_id: str,
+            decision: EvidenceReviewDecision,
+        ) -> EvidenceReviewRun:
+            """Submit an explicit complete human evidence decision."""
+            principal = principal_provider.get_principal()
+
+            return await evidence_service.submit_review(
+                user_id=principal.user_id,
+                review_run_id=review_run_id,
+                decision=decision,
+            )
 
     @mcp.resource(
         "careerops://applications/{application_id}",
