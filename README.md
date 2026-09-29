@@ -384,9 +384,10 @@ Never commit `.env` files or live credentials.
 
 ---
 
-## Development MCP server
+## Development REST and MCP gateway
 
-A local Streamable HTTP MCP server can be started with:
+The development launcher exposes the same authenticated REST and MCP surface
+used by Module 3, backed by one fixed local-only principal:
 
 ```bash
 uv run --env-file .env python scripts/run_dev_mcp_server.py
@@ -395,11 +396,14 @@ uv run --env-file .env python scripts/run_dev_mcp_server.py
 Development principal values can be overridden through:
 
 ```text
+CAREEROPS_DEV_ACCESS_TOKEN
 CAREEROPS_DEV_MCP_USER_ID
 CAREEROPS_DEV_MCP_ACTOR_ID
 ```
 
-The defaults are development-only identities and are not intended as a production authentication mechanism.
+The default local bearer token is `careerops-local-dev-token`. The token and
+fixed principal are development-only and must never be used as a production
+authentication mechanism.
 
 ---
 
