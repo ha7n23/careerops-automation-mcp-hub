@@ -409,12 +409,21 @@ authentication mechanism.
 
 ## OpenClaw
 
+Both OpenClaw services load Module 2's root `.env`. Ensure it defines
+`OPENCLAW_GATEWAY_TOKEN`, `OPENROUTER_API_KEY` and
+`CAREEROPS_DEV_ACCESS_TOKEN`. The last value must be the same token used by the
+development launcher; local development defaults to `careerops-local-dev-token`.
+
 Start the gateway:
 
 ```bash
 docker compose -f openclaw/compose.yaml \
   up -d --wait openclaw-gateway
 ```
+
+The committed policy enables the authenticated, text-only Chat Completions
+endpoint used by Module 3. It bounds request bodies to 32 KiB and rejects image
+parts; the existing gateway bearer token remains required.
 
 Validate the committed policy before applying it:
 
@@ -425,9 +434,26 @@ docker compose -f openclaw/compose.yaml \
   --stdin \
   --replace-path agents.defaults.models \
   --replace-path mcp.servers.careerops \
+  --replace-path gateway.http.endpoints.chatCompletions \
   --dry-run \
   --json \
   < openclaw/config/careerops.patch.json
+```
+
+Apply the validated policy and recreate the gateway so environment changes are
+loaded:
+
+```bash
+docker compose -f openclaw/compose.yaml run -T --rm openclaw-cli \
+  config patch \
+  --stdin \
+  --replace-path agents.defaults.models \
+  --replace-path mcp.servers.careerops \
+  --replace-path gateway.http.endpoints.chatCompletions \
+  < openclaw/config/careerops.patch.json
+
+docker compose -f openclaw/compose.yaml \
+  up -d --force-recreate --wait openclaw-gateway
 ```
 
 Probe the CareerOps MCP integration:
@@ -492,6 +518,7 @@ The OpenClaw policy also has dedicated automated tests covering:
 * exact MCP tool allowlist
 * exclusion of `update_application_status`
 * expected timeout policy
+* bounded text-only web assistant endpoint
 
 ---
 
