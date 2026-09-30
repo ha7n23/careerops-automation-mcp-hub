@@ -3,6 +3,7 @@ from pathlib import Path
 from typing import Any, cast
 
 POLICY_PATH = Path("openclaw/config/careerops.patch.json")
+COMPOSE_PATH = Path("openclaw/compose.yaml")
 
 PRIMARY_MODEL = "openrouter/nvidia/nemotron-3.5-lightning:free"
 FALLBACK_MODEL = "openrouter/nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free"
@@ -51,6 +52,7 @@ def test_openclaw_models_are_explicitly_free_and_allowlisted() -> None:
     assert set(models) == {PRIMARY_MODEL, FALLBACK_MODEL}
     assert all(model_name.endswith(":free") for model_name in models)
     assert "openrouter/auto" not in models
+    assert defaults["thinkingDefault"] == "low"
 
 
 def test_openclaw_uses_only_careerops_skill_and_minimal_tools() -> None:
@@ -63,6 +65,20 @@ def test_openclaw_uses_only_careerops_skill_and_minimal_tools() -> None:
     }
 
 
+def test_openclaw_configures_a_bounded_text_assistant_endpoint() -> None:
+    policy = load_policy()
+
+    endpoints = policy["gateway"]["http"]["endpoints"]
+
+    assert endpoints == {
+        "chatCompletions": {
+            "enabled": True,
+            "maxBodyBytes": 32768,
+            "maxImageParts": 0,
+        }
+    }
+
+
 def test_openclaw_mcp_server_is_least_privilege() -> None:
     policy = load_policy()
 
@@ -72,8 +88,19 @@ def test_openclaw_mcp_server_is_least_privilege() -> None:
     assert server["url"] == "http://host.docker.internal:8001/mcp"
     assert server["connectTimeout"] == 5
     assert server["timeout"] == 660
+    assert server["headers"] == {
+        "Authorization": "Bearer ${CAREEROPS_DEV_ACCESS_TOKEN}"
+    }
 
     exposed_tools = set(server["toolFilter"]["include"])
 
     assert exposed_tools == APPROVED_MCP_TOOLS
     assert "update_application_status" not in exposed_tools
+
+
+def test_openclaw_services_load_the_module_environment_without_shadowing() -> None:
+    compose = COMPOSE_PATH.read_text(encoding="utf-8")
+
+    assert compose.count("path: ../.env") == 2
+    assert "OPENCLAW_GATEWAY_TOKEN:" not in compose
+    assert "OPENROUTER_API_KEY:" not in compose

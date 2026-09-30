@@ -11,6 +11,7 @@
         "openrouter/nvidia/nemotron-3.5-lightning:free": {},
         "openrouter/nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free": {}
       },
+      "thinkingDefault": "low",
       "workspace": "/home/node/.openclaw/workspace",
       "skills": [
         "careerops"
@@ -23,6 +24,17 @@
       "careerops__*"
     ]
   },
+  "gateway": {
+    "http": {
+      "endpoints": {
+        "chatCompletions": {
+          "enabled": true,
+          "maxBodyBytes": 32768,
+          "maxImageParts": 0
+        }
+      }
+    }
+  },
   "mcp": {
     "servers": {
       "careerops": {
@@ -30,6 +42,9 @@
         "transport": "streamable-http",
         "connectTimeout": 5,
         "timeout": 660,
+        "headers": {
+          "Authorization": "Bearer ${CAREEROPS_DEV_ACCESS_TOKEN}"
+        },
         "toolFilter": {
           "include": [
             "archive_registry_evidence",

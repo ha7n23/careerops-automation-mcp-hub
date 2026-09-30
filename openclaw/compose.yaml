@@ -6,7 +6,7 @@ services:
     init: true
 
     env_file:
-      - path: .env
+      - path: ../.env
         required: false
 
     environment:
@@ -18,9 +18,6 @@ services:
       OPENCLAW_CONFIG_PATH: /home/node/.openclaw/openclaw.json
       OPENCLAW_CONFIG_DIR: /home/node/.openclaw
       OPENCLAW_WORKSPACE_DIR: /home/node/.openclaw/workspace
-
-      OPENCLAW_GATEWAY_TOKEN: ${OPENCLAW_GATEWAY_TOKEN:-}
-      OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-}
 
       OPENCLAW_DISABLE_BONJOUR: "1"
       TZ: ${OPENCLAW_TZ:-Europe/London}
@@ -73,7 +70,7 @@ services:
     network_mode: "service:openclaw-gateway"
 
     env_file:
-      - path: .env
+      - path: ../.env
         required: false
 
     environment:
@@ -85,9 +82,6 @@ services:
       OPENCLAW_CONFIG_PATH: /home/node/.openclaw/openclaw.json
       OPENCLAW_CONFIG_DIR: /home/node/.openclaw
       OPENCLAW_WORKSPACE_DIR: /home/node/.openclaw/workspace
-
-      OPENCLAW_GATEWAY_TOKEN: ${OPENCLAW_GATEWAY_TOKEN:-}
-      OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-}
 
       OPENCLAW_DISABLE_BONJOUR: "1"
       TZ: ${OPENCLAW_TZ:-Europe/London}
